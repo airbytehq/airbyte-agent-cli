@@ -2,7 +2,7 @@
 name: airbyte-agent
 description: Drive the `airbyte-agent` CLI to manage Airbyte connectors, workspaces, and organizations. Run list/get/search/create/update actions against connector data (HubSpot, Salesforce, Slack, GitHub, etc.), install new connectors via the browser credential flow, list and switch workspaces, list organizations, inspect connector metadata, read skill docs, or print the merged CLI + OpenAPI schema for any operation. Use when the user mentions Airbyte, the `airbyte-agent` CLI, connectors, syncs, workspaces, organizations, or asks to read/write data from a connected SaaS product.
 metadata:
-  version: "v0.1.0"
+  version: "v0.1.2"
 ---
 
 # airbyte-agent
