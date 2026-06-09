@@ -1220,6 +1220,7 @@ func TestConnectorsResourceOperations(t *testing.T) {
 		"list":           false,
 		"list-available": false,
 		"describe":       false,
+		"inspect":        false,
 		"execute":        false,
 		"delete":         false,
 	}

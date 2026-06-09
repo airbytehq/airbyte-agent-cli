@@ -19,8 +19,10 @@ const (
 
 type skillsResource struct{}
 
-func (sr *skillsResource) Name() string        { return "skills" }
-func (sr *skillsResource) Description() string { return "Discover and read connector and agent skill docs" }
+func (sr *skillsResource) Name() string { return "skills" }
+func (sr *skillsResource) Description() string {
+	return "Discover and read connector and agent skill docs"
+}
 func (sr *skillsResource) Operations() []registry.Operation {
 	return []registry.Operation{
 		{

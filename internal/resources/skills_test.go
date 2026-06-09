@@ -357,26 +357,20 @@ func TestRenderSkillDocsMatchesMCPFixture(t *testing.T) {
 	}
 
 	got := renderSkillDocs(docs)
-	want := `# HubSpot
-Skill ID: connector-source:conn-1
-Kind: connector_source
-Summary: Use HubSpot CRM data.
-
-Warnings:
-- Index building
-
-## Overview
-
-Read before executing.
-
-| Field | Meaning |
-| --- | --- |
-| company \| name | Company name |
-
-{"extra":true,"type":"mystery"}
-
-## Outline
-- `actions.contacts.search` Search contacts - Search indexed contacts`
+	want := "# HubSpot\n" +
+		"Skill ID: connector-source:conn-1\n" +
+		"Kind: connector_source\n" +
+		"Summary: Use HubSpot CRM data.\n\n" +
+		"Warnings:\n" +
+		"- Index building\n\n" +
+		"## Overview\n\n" +
+		"Read before executing.\n\n" +
+		"| Field | Meaning |\n" +
+		"| --- | --- |\n" +
+		"| company \\| name | Company name |\n\n" +
+		"{\"extra\":true,\"type\":\"mystery\"}\n\n" +
+		"## Outline\n" +
+		"- `actions.contacts.search` Search contacts - Search indexed contacts"
 	if got != want {
 		t.Fatalf("rendered markdown mismatch\ngot:\n%s\n\nwant:\n%s", got, want)
 	}
