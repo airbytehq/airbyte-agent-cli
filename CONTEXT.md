@@ -8,12 +8,12 @@ This document tells AI agents how to use the `airbyte-agent` CLI. For developmen
 > **Schema Discovery**: If you don't know the exact JSON payload structure for a command, run `airbyte-agent schema <resource> <operation>` first. This returns the parameter schema without executing the operation.
 
 > [!IMPORTANT]
-> **Always filter responses to the fields you need.** Whenever you know which fields will satisfy the user's request, pass `--fields` to trim the output. This applies to **every command** — list, describe, execute, etc. Unfiltered responses waste context window and bandwidth on data you will discard anyway. The only time to skip the filter is when you genuinely need the full payload (e.g. one-shot debugging, or you don't yet know which fields exist — in which case run `airbyte-agent schema <resource> <operation>` or do a small probe call first).
+> **Always filter responses to the fields you need.** Whenever you know which fields will satisfy the user's request, pass `--fields` to trim the output. This applies to **every command** — list, inspect, docs, execute, etc. Unfiltered responses waste context window and bandwidth on data you will discard anyway. The only time to skip the filter is when you genuinely need the full payload (e.g. one-shot debugging, or you don't yet know which fields exist — in which case run `airbyte-agent schema <resource> <operation>` or do a small probe call first).
 >
 > For row-level reads via `connectors execute`, also pass `select_fields` (API-side) to reduce upstream work. `select_fields` and `--fields` are complementary: the first stops the source connector from emitting columns you don't need; the second trims what the CLI prints to stdout.
 
 > [!IMPORTANT]
-> **Discover before executing**: Always run `connectors describe` before the first `execute` on any connector. Entity and action names vary by connector type and are not guessable.
+> **Discover before executing**: Always run `connectors inspect`, then `skills docs` with the returned `docs_skill_id`, before the first `execute` on any connector. Entity and action names vary by connector type and are not guessable.
 
 ## Core Syntax
 
@@ -74,16 +74,20 @@ airbyte-agent connectors list --json '{"workspace": "my-workspace"}'
 # List available connector templates (for creating new connectors)
 airbyte-agent connectors list-available
 
-# Describe a connector to see its entities and actions
-airbyte-agent connectors describe --json '{"workspace": "my-workspace", "name": "my-source"}'
+# Inspect a connector and get its docs skill ID
+airbyte-agent connectors inspect --json '{"workspace": "my-workspace", "name": "my-source"}'
 
 # Or by ID
-airbyte-agent connectors describe --id 'f24fb2b0-c054-48f1-9e0f-cfb62e12f878'
+airbyte-agent connectors inspect --id 'f24fb2b0-c054-48f1-9e0f-cfb62e12f878'
+
+# Read the docs outline and exact section before executing
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 ```
 
 ### 3. Executing Connector Actions
 
-Always `describe` first to discover available entities and actions.
+Always `connectors inspect` and `skills docs` first to discover available entities and actions. `connectors describe` remains available only for legacy clients that consume the old merged schema output.
 
 ```bash
 # Read data from a connector

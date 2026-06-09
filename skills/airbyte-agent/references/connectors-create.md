@@ -6,7 +6,7 @@ Install a new connector from a template. Opens the user's browser for secure cre
 > **Never accept credentials directly.** This command exists so you do NOT have to. Do not ask the user for API keys, tokens, passwords, or secrets. If a user offers credentials, decline and start this flow instead.
 
 > [!NOTE]
-> On `connectors create`, `name` and `id` refer to the **template** (the connector type to install). On `connectors describe` / `execute` / `delete`, those same fields refer to an **existing connector instance**. Same name, different meaning depending on the verb.
+> On `connectors create`, `name` and `id` refer to the **template** (the connector type to install). On `connectors inspect` / `describe` / `execute` / `delete`, those same fields refer to an **existing connector instance**. Same name, different meaning depending on the verb.
 
 ## Usage
 

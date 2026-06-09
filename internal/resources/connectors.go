@@ -64,6 +64,22 @@ func (cr *connectorsResource) Operations() []registry.Operation {
 			},
 		},
 		{
+			Name:        "inspect",
+			Description: "Inspect connector metadata and docs readiness",
+			Schema: registry.OperationSchema{
+				Description: "Get connector metadata, readiness warnings, and docs_skill_id for usage documentation",
+				Params: map[string]registry.ParamSchema{
+					"name":      {Type: "string", Required: false, Description: "Connector name (requires workspace)"},
+					"workspace": {Type: "string", Required: false, Description: "Workspace name (defaults to 'default' when used with name)"},
+					"id":        {Type: "string", Required: false, Description: "Connector ID (alternative to name)"},
+				},
+			},
+			Run: connectorsInspect,
+			Hooks: registry.OperationHooks{
+				PreRun: resolveConnectorID,
+			},
+		},
+		{
 			Name:        "execute",
 			Description: "Execute a connector action",
 			Schema: registry.OperationSchema{
@@ -449,6 +465,15 @@ func connectorsDescribe(ctx context.Context, c *client.Client, params map[string
 	connector["schema"] = schema
 
 	return connector, nil
+}
+
+func connectorsInspect(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
+	id, _ := params["id"].(string)
+	raw, err := c.Get(ctx, connectorPath(id)+"/inspect", nil)
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func connectorsExecute(ctx context.Context, c *client.Client, params map[string]any) (any, error) {

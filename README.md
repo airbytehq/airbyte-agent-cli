@@ -53,7 +53,7 @@ go build -o airbyte-agent .
 
 ## Skills
 
-The repo ships a single agent skill, `skills/airbyte-agent/`, that bundles per-command playbooks under `skills/airbyte-agent/references/<command>.md`. The top-level `SKILL.md` carries cross-command rules (`--json` payload format, `--fields` filtering, auth recovery, `connectors describe` before `execute`) and a routing table the agent uses to open the matching reference for the task at hand. This follows the [Agent Skills spec](https://agentskills.io/specification) for progressive disclosure: only the small `SKILL.md` is loaded on activation, and per-command references are opened on demand.
+The repo ships a single agent skill, `skills/airbyte-agent/`, that bundles per-command playbooks under `skills/airbyte-agent/references/<command>.md`. The top-level `SKILL.md` carries cross-command rules (`--json` payload format, `--fields` filtering, auth recovery, `connectors inspect` + `skills docs` before `execute`) and a routing table the agent uses to open the matching reference for the task at hand. This follows the [Agent Skills spec](https://agentskills.io/specification) for progressive disclosure: only the small `SKILL.md` is loaded on activation, and per-command references are opened on demand.
 
 The skill works alongside the CLI — it tells the agent *how* to invoke each command, while the `airbyte-agent` binary does the actual work. Install the CLI first, then install the skill into your agent.
 
@@ -172,7 +172,8 @@ Parameters can be supplied two ways: as a single JSON document via `--json`, or 
 **1. Individual flags (recommended for humans)** — scalar and array parameters in the operation's schema are exposed as `--<param>` flags, with snake_case keys converted to kebab-case (e.g. `select_fields` → `--select-fields`):
 
 ```bash
-airbyte-agent connectors describe --workspace default --name hubspot
+airbyte-agent connectors inspect --workspace default --name hubspot
+airbyte-agent skills docs --id '<docs_skill_id from inspect>'
 airbyte-agent connectors execute --workspace default --name hubspot \
   --entity contacts --action read \
   --select-fields id,email,name
@@ -243,8 +244,10 @@ airbyte-agent schema connectors execute           # CLI params + OpenAPI request
 # Find a workspace
 airbyte-agent workspaces list --json '{}'
 
-# Discover what a connector can do
-airbyte-agent connectors describe --json '{"workspace": "default", "name": "hubspot"}'
+# Inspect connector metadata and read usage docs
+airbyte-agent connectors inspect --json '{"workspace": "default", "name": "hubspot"}'
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
 # Read data, limiting fields to keep the response small
 airbyte-agent connectors execute --json '{
@@ -264,6 +267,8 @@ airbyte-agent connectors create --json '{
 # Load a complex payload from a file
 airbyte-agent connectors execute --json @params.json
 ```
+
+`connectors describe` remains available for legacy clients that consume the old merged schema output, but new workflows should use `connectors inspect` and `skills docs`.
 
 ## Develop
 

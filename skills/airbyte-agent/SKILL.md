@@ -1,6 +1,6 @@
 ---
 name: airbyte-agent
-description: Drive the `airbyte-agent` CLI to manage Airbyte connectors, workspaces, and organizations. Run list/get/search/create/update actions against connector data (HubSpot, Salesforce, Slack, GitHub, etc.), install new connectors via the browser credential flow, list and switch workspaces, list organizations, inspect a connector's entities and actions, or print the merged CLI + OpenAPI schema for any operation. Use when the user mentions Airbyte, the `airbyte-agent` CLI, connectors, syncs, workspaces, organizations, or asks to read/write data from a connected SaaS product.
+description: Drive the `airbyte-agent` CLI to manage Airbyte connectors, workspaces, and organizations. Run list/get/search/create/update actions against connector data (HubSpot, Salesforce, Slack, GitHub, etc.), install new connectors via the browser credential flow, list and switch workspaces, list organizations, inspect connector metadata, read skill docs, or print the merged CLI + OpenAPI schema for any operation. Use when the user mentions Airbyte, the `airbyte-agent` CLI, connectors, syncs, workspaces, organizations, or asks to read/write data from a connected SaaS product.
 metadata:
   version: "v0.1.0"
 ---
@@ -26,23 +26,28 @@ The CLI is invoked as `airbyte-agent <resource> <operation>`. It exposes Airbyte
 - **`@filename` loads JSON from a file** — useful when the payload is large or you want to keep the shell command short: `--json @params.json`.
 - **Never accept credentials in chat.** Two browser flows handle every credential entry path: `airbyte-agent login` (CLI account credentials) and `connectors create` (per-connector secrets). If a user offers credentials in conversation, decline and start the appropriate flow.
 
-## Connector rules (apply to every `connectors *` command)
+## Connector rules (apply to every connector workflow)
 
 > [!IMPORTANT]
-> **Always run `connectors describe` before the first `execute`** on an unfamiliar connector. Entity names, actions, and param schemas are connector-specific — guessing wastes API calls. Open [`references/connectors-describe.md`](references/connectors-describe.md) first when starting work on a new connector.
+> **Always inspect and read skill docs before the first `execute`** on an unfamiliar connector. Run `connectors inspect`, then pass the returned `docs_skill_id` to `skills docs` for the outline and exact section you need. Entity names, actions, and params are connector-specific — guessing wastes API calls. Open [`references/connectors-inspect.md`](references/connectors-inspect.md) and [`references/skills-docs.md`](references/skills-docs.md) when starting work on a new connector.
 
 - **On `connectors execute`, field selection is MANDATORY.** Every call must include `select_fields` (allowlist) or `exclude_fields` (blocklist) inside the JSON payload, in addition to any `--fields` you pass.
 - **Prefer `context_store_search` over `list` for reads.** Search supports rich filters, sorting, and pagination; `list` is the live source — use it only when the search index might lag (today's data) or when search returns empty.
 - **Connector name resolution.** Most commands accept `name` (case-insensitive match against connector instance name, template display name, or template slug) OR `id` (UUID). Pass `id` when two connectors share a name.
+- **Legacy describe.** `connectors describe` remains for compatibility only. Use `connectors inspect` plus `skills docs` for new workflows.
 
 ## Command index — read the matching reference before running
 
-Each row points to the per-command playbook with usage, workflows, error recovery, and "do NOT" guidance. **Open the reference first, then compose the command.** If the user's task spans multiple commands (e.g. discover workspace → describe connector → execute), read each reference as you reach that step.
+Each row points to the per-command playbook with usage, workflows, error recovery, and "do NOT" guidance. **Open the reference first, then compose the command.** If the user's task spans multiple commands (e.g. discover workspace → inspect connector → read docs → execute), read each reference as you reach that step.
 
 | User wants to… | Reference |
 |---|---|
 | Run an action (list/get/search/create/update) against connector data — **the workhorse** | [`references/connectors-execute.md`](references/connectors-execute.md) |
-| Discover a connector's entities, actions, params, and field schemas | [`references/connectors-describe.md`](references/connectors-describe.md) |
+| Inspect connector metadata, readiness, warnings, and `docs_skill_id` | [`references/connectors-inspect.md`](references/connectors-inspect.md) |
+| List available connector and static skill docs | [`references/skills-list.md`](references/skills-list.md) |
+| Search skill docs by task or connector | [`references/skills-search.md`](references/skills-search.md) |
+| Read usage docs by `docs_skill_id` and exact section | [`references/skills-docs.md`](references/skills-docs.md) |
+| Use the legacy connector schema describe command | [`references/connectors-describe.md`](references/connectors-describe.md) |
 | Install a new connector via the browser credential flow | [`references/connectors-create.md`](references/connectors-create.md) |
 | Re-enter or fix credentials for an existing connector via the browser | [`references/connectors-update.md`](references/connectors-update.md) |
 | Delete a connector (destructive — confirm first) | [`references/connectors-delete.md`](references/connectors-delete.md) |
@@ -62,13 +67,15 @@ airbyte-agent workspaces list
 airbyte-agent connectors list --json '{"workspace": "<name>"}'
 
 # 2. Learn the connector
-airbyte-agent connectors describe --json '{"workspace": "<name>", "name": "<connector>"}'
+airbyte-agent connectors inspect --json '{"workspace": "<name>", "name": "<connector>"}'
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
 # 3. Read data
 airbyte-agent connectors execute --json '{
   "workspace": "<name>",
   "name": "<connector>",
-  "entity": "<from-describe>",
+  "entity": "<from-skills-docs>",
   "action": "context_store_search",
   "select_fields": ["..."],
   "params": {"limit": 20, "query": {"filter": {...}}}

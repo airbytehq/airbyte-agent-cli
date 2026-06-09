@@ -1,9 +1,9 @@
 # connectors describe
 
-Show a connector's available entities (e.g. `users`, `contacts`, `orders`) and the actions supported on each (e.g. `read`, `write`). This is the contract every `connectors execute` call should be planned against.
+Legacy compatibility command that shows a connector's available entities and actions by calling the older rich describe flow.
 
 > [!IMPORTANT]
-> **Always describe before execute.** Entity and action names vary by connector type and are not predictable. Do NOT guess them.
+> Prefer `connectors inspect` plus `skills docs` for new workflows. Use `connectors describe` only when the new inspect/docs endpoints are unavailable or a legacy script depends on the old merged schema shape.
 
 ## Usage
 
@@ -21,9 +21,9 @@ airbyte-agent connectors describe --json '{"id": "<connector-id>"}'
 
 ## When to use
 
-- Before the first `execute` on any connector.
-- When you need to discover what fields an entity exposes.
-- When debugging a `not_found` or `validation_error` from `execute`.
+- Maintaining an existing script that consumes the old `schema` field.
+- Working against an environment where `connectors inspect` or `skills docs` is unavailable.
+- Comparing legacy schema output during migration.
 
 ## Workflow
 
@@ -31,7 +31,11 @@ airbyte-agent connectors describe --json '{"id": "<connector-id>"}'
 # 1. Find the connector
 airbyte-agent connectors list --json '{"workspace": "my-workspace"}'
 
-# 2. Describe it
+# 2. Preferred: inspect and read docs
+airbyte-agent connectors inspect --json '{"workspace": "my-workspace", "name": "my-source"}'
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+
+# Legacy fallback: describe it
 airbyte-agent connectors describe --json '{"workspace": "my-workspace", "name": "my-source"}'
 
 # 3. Execute the discovered entity + action
@@ -44,9 +48,9 @@ airbyte-agent connectors execute --json '{
 }'
 ```
 
-Once you have the describe output, open [`connectors-execute.md`](connectors-execute.md) before composing the `execute` call — it covers field selection, filter operators, pagination, and write-action rules that aren't repeated here.
+For new executions, open [`connectors-inspect.md`](connectors-inspect.md), [`skills-docs.md`](skills-docs.md), and [`connectors-execute.md`](connectors-execute.md) before composing the `execute` call.
 
 ## Do NOT
 
-- Do NOT skip this step before the first `execute` — guessing entity/action names wastes API calls and confuses the user.
+- Do NOT use this as the default discovery path for new workflows — use `connectors inspect` plus `skills docs`.
 - Do NOT cache describe output across CLI versions — the schema can change when connectors update.

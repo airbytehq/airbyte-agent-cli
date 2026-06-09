@@ -3,7 +3,7 @@
 Run an action against an entity on a connector — the workhorse command for actually moving data. This reference embeds the SDK-level knowledge of how the underlying API behaves (filter operators, pagination, response shape, field-selection rules).
 
 > [!IMPORTANT]
-> **`connectors describe` is the source of truth for what a specific connector supports.** Use it to discover the **entities** the connector exposes, the **actions** valid on each entity, and the **params** each action accepts (filter fields, required arguments, response shape). Do NOT guess any of these — every guess is an avoidable round-trip. The action table below is a *baseline* (most connectors support most of these), but the actually-supported set is what `describe` reports. **Read [`connectors-describe.md`](connectors-describe.md) before running `execute` against an unfamiliar connector.**
+> **Skill docs are the source of truth for what a specific connector supports.** Run `connectors inspect`, then pass the returned `docs_skill_id` to `skills docs` to discover the **entities**, **actions**, and **params** this connector supports. Do NOT guess these values. The action table below is a baseline only. **Read [`connectors-inspect.md`](connectors-inspect.md) and [`skills-docs.md`](skills-docs.md) before running `execute` against an unfamiliar connector.**
 
 ## Usage
 
@@ -22,7 +22,7 @@ airbyte-agent connectors execute --json '{
 
 ## Available actions (baseline)
 
-Most connectors expose these actions, but the authoritative list for a given connector comes from `connectors describe` (see next section). Entities are always per-connector — never assume them.
+Most connectors expose these actions, but the authoritative list for a given connector comes from `skills docs` using the `docs_skill_id` returned by `connectors inspect` (see next section). Entities are always per-connector — never assume them.
 
 | Action | Purpose | Supports filtering? |
 |---|---|---|
@@ -33,39 +33,42 @@ Most connectors expose these actions, but the authoritative list for a given con
 | `create` | Write a new entity. | n/a |
 | `update` | Modify an existing entity. | n/a |
 
-## Discovering entities, actions, and params with `connectors describe`
+## Discovering entities, actions, and params
 
-Before guessing what to put in the `entity` / `action` / `params` fields, run `connectors describe` against the connector. Its output is the contract — it lists every entity the connector supports, every action valid on each entity, and the param schema each action accepts. See [`connectors-describe.md`](connectors-describe.md) for the full describe playbook.
+Before composing `entity` / `action` / `params`, inspect the connector and read its skill docs. The inspect response returns `docs_skill_id`; the docs outline lists exact section IDs to request before executing. See [`connectors-inspect.md`](connectors-inspect.md) and [`skills-docs.md`](skills-docs.md) for the full playbooks.
 
 ```bash
-airbyte-agent connectors describe --json '{"workspace": "default", "name": "hubspot"}'
+airbyte-agent connectors inspect --json '{"workspace": "default", "name": "hubspot"}'
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 ```
 
 What you'll find in the response:
 
-- **`entities`** — the named entity types this connector exposes (e.g. `contacts`, `deals`, `users` for HubSpot; `calls`, `messages`, `accounts` for Twilio). Use one of these as the `entity` value on `execute`.
-- **`actions` per entity** — which of `list`, `get`, `context_store_search`, `api_search`, `create`, `update` are valid for that entity (read-only entities will lack `create`/`update`; some only support `get`).
-- **`params` schema per action** — which fields are required vs optional, what filters are supported (e.g. `eq`/`fuzzy`/`like` for the searchable fields), what the request shape for `create`/`update` looks like.
-- **Field schemas** — names and types of the fields each entity returns. Use these to pick `select_fields` precisely; never `select_fields: ["everything"]`.
+- **`docs_skill_id`** from `connectors inspect` — pass this exact value to `skills docs`; do not construct it yourself.
+- **Outline section IDs** from `skills docs` — pass an exact `section` value for the entity/action you plan to use.
+- **Entity/action/params docs** — use these to choose `entity`, `action`, `params`, and `select_fields` precisely; never `select_fields: ["everything"]`.
 
 Workflow when starting work on an unfamiliar connector:
 
 ```bash
-# 1. Discover entities + actions + params
-airbyte-agent connectors describe --json '{"workspace": "default", "name": "<connector>"}'
+# 1. Inspect and read docs
+airbyte-agent connectors inspect --json '{"workspace": "default", "name": "<connector>"}'
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
+airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
 # 2. Now compose execute, knowing the contract
 airbyte-agent connectors execute --json '{
   "workspace": "default",
   "name": "<connector>",
-  "entity": "<an-entity-from-describe>",
-  "action": "<an-action-from-describe>",
-  "select_fields": ["<field-from-describe>", "..."],
-  "params": { ... per the param schema in describe ... }
+  "entity": "<an-entity-from-skills-docs>",
+  "action": "<an-action-from-skills-docs>",
+  "select_fields": ["<field-from-skills-docs>", "..."],
+  "params": { ... per the params docs ... }
 }'
 ```
 
-If `execute` returns `validation_error` on `entity` or `action`, you guessed — run `describe` and try again with the real names.
+If `execute` returns `validation_error` on `entity` or `action`, you guessed or read the wrong section — inspect, read the exact docs section, and retry with the real names.
 
 ## Response structure
 
@@ -137,7 +140,7 @@ The operator is the **outer key**; `field: value` is nested inside. All examples
 
 When filtering by a related entity (a person, team, project, account…), foreign keys are **not always named `id`**. Look for fields whose name or description indicates a link to another entity: `ownerId`, `accountId`, `assignee_id`, `project_key`, etc. Workflow:
 
-1. Run `connectors describe` once for the connector to see entity schemas.
+1. Run `connectors inspect`, then `skills docs`, to see entity schemas.
 2. Identify the foreign-key field that links the entities you care about.
 3. Search the related entity by name to get its primary key.
 4. Use that key in the filter.
@@ -207,7 +210,7 @@ airbyte-agent connectors execute --fields data.id,data.email,meta.has_more --jso
 | Error | Likely cause | Fix |
 |---|---|---|
 | `not_found` (exit 3) on connector | Name not found | Run `connectors list` to see exact names. The CLI matches against connector instance name, template display name, AND template slug, case-insensitively — so any of those works. |
-| `validation_error` (exit 4) on entity/action | Guessed entity name | Run `connectors describe` to enumerate entities. Actions are universal (see table above). |
+| `validation_error` (exit 4) on entity/action | Guessed entity/action name | Run `connectors inspect`, then `skills docs`, to enumerate supported entities and actions. |
 | Ambiguous name (exit 4) | Two connectors share a name | Pass `"id": "<uuid>"` in the JSON payload instead of `"name"`. |
 | `auth_error` (exit 2) | Credentials invalid or expired | Re-run `airbyte-agent login` to refresh credentials. |
 | Empty `data: []` from `context_store_search` | Index lag, or filter too narrow | Retry with `"action": "list"` (live source). If still empty, broaden the filter. |
@@ -216,7 +219,7 @@ airbyte-agent connectors execute --fields data.id,data.email,meta.has_more --jso
 
 - Do NOT call `execute` without `select_fields` or `exclude_fields`. Field selection is mandatory.
 - Do NOT use `like` when `fuzzy` would do — `like` fails on word reordering and typos.
-- Do NOT guess entity, action, or param names. Run `connectors describe` first — it's the source of truth for what a specific connector supports.
+- Do NOT guess entity, action, or param names. Run `connectors inspect`, then `skills docs`, first — docs are the source of truth for what a specific connector supports.
 - Do NOT pass credentials in the `execute` payload — credentials live on the connector and are set via `connectors create`.
 - Do NOT paginate beyond 3 pages — narrow the filter instead.
 - Do NOT pass relative dates ("today", "last week") — resolve to absolute ISO 8601 timestamps and report the range to the user.

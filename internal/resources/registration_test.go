@@ -486,6 +486,7 @@ func TestResourceMetadata(t *testing.T) {
 		{&organizationsResource{}, "organizations", "Manage organizations"},
 		{&workspacesResource{}, "workspaces", "Manage workspaces"},
 		{&connectorsResource{}, "connectors", "Create, manage, and execute connectors"},
+		{&skillsResource{}, "skills", "Discover and read connector and agent skill docs"},
 	}
 
 	for _, tt := range tests {
@@ -508,6 +509,7 @@ func TestEveryOpSpecRefResolves(t *testing.T) {
 		&organizationsResource{},
 		&workspacesResource{},
 		&connectorsResource{},
+		&skillsResource{},
 	}
 	for _, res := range resources {
 		for _, op := range res.Operations() {

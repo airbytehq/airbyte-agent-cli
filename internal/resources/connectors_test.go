@@ -12,6 +12,7 @@ import (
 
 	"github.com/airbytehq/airbyte-agent-cli/internal/auth"
 	"github.com/airbytehq/airbyte-agent-cli/internal/client"
+	"github.com/airbytehq/airbyte-agent-cli/internal/registry"
 )
 
 func TestApplyDefaultWorkspace_EmptyFallsBackToHardcoded(t *testing.T) {
@@ -657,12 +658,16 @@ func TestConnectorsListAvailable(t *testing.T) {
 }
 
 func TestConnectorsDescribe(t *testing.T) {
+	var sawExecute bool
+	var gotDescribeBody map[string]any
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/integrations/connectors/conn-1":
 			_, _ = w.Write([]byte(`{"id": "conn-1", "name": "Test Connector"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/integrations/connectors/conn-1/execute":
+			sawExecute = true
+			_ = json.NewDecoder(r.Body).Decode(&gotDescribeBody)
 			_, _ = w.Write([]byte(`{"entities": [{"name": "contacts"}]}`))
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -692,6 +697,75 @@ func TestConnectorsDescribe(t *testing.T) {
 	}
 	if m["schema"] == nil {
 		t.Error("expected schema to be populated from describe")
+	}
+	if !sawExecute {
+		t.Error("expected legacy describe to call connector execute action=describe")
+	}
+	if gotDescribeBody["action"] != "describe" {
+		t.Errorf("expected describe action body, got %v", gotDescribeBody)
+	}
+}
+
+func TestConnectorsInspect(t *testing.T) {
+	var sawExecute bool
+	var gotPath string
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		gotPath = r.URL.Path
+		if strings.HasSuffix(r.URL.Path, "/execute") {
+			sawExecute = true
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/integrations/connectors/conn-1/inspect" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"connector_id": "conn-1", "docs_skill_id": "connector-source:conn-1", "warnings": []}`))
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	result, err := connectorsInspect(context.Background(), c, map[string]any{"id": "conn-1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sawExecute {
+		t.Fatal("inspect must not call legacy connector execute describe")
+	}
+	if gotPath != "/api/v1/integrations/connectors/conn-1/inspect" {
+		t.Fatalf("got path %q, want inspect path", gotPath)
+	}
+
+	raw, ok := result.(json.RawMessage)
+	if !ok {
+		t.Fatalf("expected json.RawMessage, got %T", result)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+	if parsed["docs_skill_id"] != "connector-source:conn-1" {
+		t.Errorf("docs_skill_id = %v", parsed["docs_skill_id"])
+	}
+}
+
+func TestConnectorsInspectOperationUsesResolveConnectorID(t *testing.T) {
+	res := &connectorsResource{}
+	var inspect *registry.Operation
+	for _, op := range res.Operations() {
+		if op.Name == "inspect" {
+			opCopy := op
+			inspect = &opCopy
+			break
+		}
+	}
+	if inspect == nil {
+		t.Fatal("inspect operation not registered")
+	}
+	if inspect.Hooks.PreRun == nil {
+		t.Fatal("inspect operation missing resolveConnectorID PreRun hook")
 	}
 }
 
