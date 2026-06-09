@@ -10,8 +10,8 @@ import (
 func renderSkillDocs(docs map[string]any) string {
 	metadata := mapValue(docs["metadata"])
 	lines := []string{
-		"# " + stringValueWithDefault(metadata["title"], stringValueWithDefault(docs["id"], "Skill docs")),
-		"Skill ID: " + stringValue(metadata["id"]),
+		"# " + skillDocsTitle(docs, metadata),
+		"Skill ID: " + stringValueWithDefault(metadata["id"], stringValue(docs["id"])),
 		"Kind: " + stringValue(metadata["kind"]),
 	}
 
@@ -35,7 +35,7 @@ func renderSkillDocs(docs map[string]any) string {
 	}
 
 	outline := sliceValue(docs["outline"])
-	if len(outline) > 0 && (sectionID != "" || len(content) == 0 || !skillDocsContentHasOutline(content)) {
+	if shouldRenderSkillDocsOutline(sectionID, content, outline) {
 		lines = append(lines, "", "## Outline")
 		for _, rawSection := range outline {
 			section := mapValue(rawSection)
@@ -58,6 +58,25 @@ func renderSkillDocs(docs map[string]any) string {
 	}
 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func skillDocsTitle(docs map[string]any, metadata map[string]any) string {
+	return stringValueWithDefault(
+		metadata["title"],
+		stringValueWithDefault(metadata["id"], stringValueWithDefault(docs["id"], "Skill docs")),
+	)
+}
+
+func shouldRenderSkillDocsOutline(sectionID string, content []any, outline []any) bool {
+	if len(outline) == 0 {
+		return false
+	}
+	// Mirror MCP's current rendering contract:
+	// - section reads always show the outline for navigation context;
+	// - outline-only docs need the generated outline;
+	// - default docs with a backend-rendered Outline heading should not get
+	//   a duplicate generated outline.
+	return sectionID != "" || len(content) == 0 || !skillDocsContentHasOutline(content)
 }
 
 func skillDocsContentHasOutline(content []any) bool {
@@ -94,7 +113,8 @@ func renderSkillDocsBlock(rawBlock any) []string {
 	case "code":
 		language := stringValue(block["language"])
 		code := stringValue(block["code"])
-		return []string{"", "```" + language, code, "```"}
+		fence := codeFenceFor(code)
+		return []string{"", fence + language, code, fence}
 	case "table":
 		return renderSkillDocsTable(block)
 	default:
@@ -112,6 +132,16 @@ func renderSkillDocsTable(block map[string]any) []string {
 	for _, header := range rawHeaders {
 		headers = append(headers, escapeSkillDocsTableCell(header))
 	}
+	rows := sliceValue(block["rows"])
+	maxColumns := len(headers)
+	for _, rawRow := range rows {
+		if rowLen := len(sliceValue(rawRow)); rowLen > maxColumns {
+			maxColumns = rowLen
+		}
+	}
+	for extra := len(headers) + 1; extra <= maxColumns; extra++ {
+		headers = append(headers, fmt.Sprintf("Extra %d", extra-len(rawHeaders)))
+	}
 
 	rendered := []string{
 		"",
@@ -119,7 +149,7 @@ func renderSkillDocsTable(block map[string]any) []string {
 		"| " + strings.Join(repeatString("---", len(headers)), " | ") + " |",
 	}
 
-	for _, rawRow := range sliceValue(block["rows"]) {
+	for _, rawRow := range rows {
 		row := sliceValue(rawRow)
 		cells := make([]string, 0, len(headers))
 		for i := 0; i < len(headers); i++ {
@@ -133,6 +163,26 @@ func renderSkillDocsTable(block map[string]any) []string {
 	}
 
 	return rendered
+}
+
+func codeFenceFor(code string) string {
+	longestRun := 0
+	currentRun := 0
+	for _, r := range code {
+		if r == '`' {
+			currentRun++
+			if currentRun > longestRun {
+				longestRun = currentRun
+			}
+			continue
+		}
+		currentRun = 0
+	}
+	fenceLength := 3
+	if longestRun >= fenceLength {
+		fenceLength = longestRun + 1
+	}
+	return strings.Repeat("`", fenceLength)
 }
 
 func headingLevel(value any) (int, bool) {

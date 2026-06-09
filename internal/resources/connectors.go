@@ -78,6 +78,7 @@ func (cr *connectorsResource) Operations() []registry.Operation {
 			Hooks: registry.OperationHooks{
 				PreRun: resolveConnectorID,
 			},
+			SpecRef: registry.SpecRef{Path: "/api/v1/integrations/connectors/{id}/inspect", Method: "GET"},
 		},
 		{
 			Name:        "execute",

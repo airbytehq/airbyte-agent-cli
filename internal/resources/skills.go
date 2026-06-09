@@ -14,7 +14,6 @@ import (
 const (
 	connectorSourceSkillPrefix = "connector-source:"
 	defaultSkillsLimit         = 20
-	maxWorkspaceLookupPages    = 100
 )
 
 type skillsResource struct{}
@@ -36,7 +35,8 @@ func (sr *skillsResource) Operations() []registry.Operation {
 					"cursor":    {Type: "string", Required: false, Description: "Opaque cursor from a previous response"},
 				},
 			},
-			Run: skillsList,
+			SpecRef: registry.SpecRef{Path: "/api/v1/skills", Method: "GET"},
+			Run:     skillsList,
 		},
 		{
 			Name:        "search",
@@ -50,7 +50,8 @@ func (sr *skillsResource) Operations() []registry.Operation {
 					"cursor":    {Type: "string", Required: false, Description: "Opaque cursor from a previous response"},
 				},
 			},
-			Run: skillsSearch,
+			SpecRef: registry.SpecRef{Path: "/api/v1/skills/search", Method: "GET"},
+			Run:     skillsSearch,
 		},
 		{
 			Name:        "docs",
@@ -64,13 +65,17 @@ func (sr *skillsResource) Operations() []registry.Operation {
 					"format":    {Type: "string", Required: false, Description: "Output format: markdown or json", Default: "markdown"},
 				},
 			},
-			Run: skillsDocs,
+			SpecRef: registry.SpecRef{Path: "/api/v1/skills/docs", Method: "GET"},
+			Run:     skillsDocs,
 		},
 	}
 }
 
 func skillsList(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
-	qp := skillsPageParams(params)
+	qp, err := skillsPageParams(params)
+	if err != nil {
+		return nil, err
+	}
 	workspaceID, err := resolveWorkspaceIDForSkills(ctx, c, params)
 	if err != nil {
 		return nil, err
@@ -85,7 +90,10 @@ func skillsList(ctx context.Context, c *client.Client, params map[string]any) (a
 
 func skillsSearch(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
 	query, _ := params["query"].(string)
-	qp := skillsPageParams(params)
+	qp, err := skillsPageParams(params)
+	if err != nil {
+		return nil, err
+	}
 	qp["query"] = query
 	workspaceID, err := resolveWorkspaceIDForSkills(ctx, c, params)
 	if err != nil {
@@ -146,15 +154,21 @@ func skillsDocs(ctx context.Context, c *client.Client, params map[string]any) (a
 	}, nil
 }
 
-func skillsPageParams(params map[string]any) map[string]string {
+func skillsPageParams(params map[string]any) (map[string]string, error) {
 	qp := map[string]string{"limit": strconv.Itoa(defaultSkillsLimit)}
-	if limit, ok := intParam(params["limit"]); ok && limit > 0 {
+	if limit, ok := intParam(params["limit"]); ok {
+		if limit <= 0 {
+			return nil, client.NewValidationError(
+				fmt.Sprintf("limit must be positive, got %d", limit),
+				`pass a positive "limit" or omit it to use the default`,
+			)
+		}
 		qp["limit"] = strconv.Itoa(limit)
 	}
 	if cursor, ok := params["cursor"].(string); ok && cursor != "" {
 		qp["cursor"] = cursor
 	}
-	return qp
+	return qp, nil
 }
 
 func shouldResolveWorkspaceForSkillDocs(id string, params map[string]any) bool {
@@ -166,82 +180,11 @@ func shouldResolveWorkspaceForSkillDocs(id string, params map[string]any) bool {
 
 func resolveWorkspaceIDForSkills(ctx context.Context, c *client.Client, params map[string]any) (string, error) {
 	workspaceName := applyDefaultWorkspace(c, params)
-	workspaces, err := fetchAllWorkspaces(ctx, c)
+	workspace, err := lookupWorkspace(ctx, c, workspaceName)
 	if err != nil {
 		return "", err
 	}
-
-	var matches []workspaceLookupItem
-	for _, workspace := range workspaces {
-		if workspace.ID == "" || !workspace.IsActive() {
-			continue
-		}
-		if strings.EqualFold(workspace.Name, workspaceName) {
-			matches = append(matches, workspace)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return "", client.NewNotFoundError(
-			fmt.Sprintf("workspace %q not found", workspaceName),
-			"run 'airbyte-agent workspaces list' to see available workspaces",
-		)
-	case 1:
-		return matches[0].ID, nil
-	default:
-		return "", client.NewValidationError(
-			fmt.Sprintf("ambiguous: %d active workspaces match %q case-insensitively", len(matches), workspaceName),
-			"set a different default workspace with 'airbyte-agent workspaces use' or rename duplicate workspaces before using skills docs",
-		)
-	}
-}
-
-func fetchAllWorkspaces(ctx context.Context, c *client.Client) ([]workspaceLookupItem, error) {
-	raw, err := c.Get(ctx, "/api/v1/workspaces", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var out []workspaceLookupItem
-	seenNext := map[string]bool{}
-	for pageCount := 0; ; pageCount++ {
-		if pageCount >= maxWorkspaceLookupPages {
-			return nil, client.NewValidationError(
-				fmt.Sprintf("workspace pagination exceeded %d pages", maxWorkspaceLookupPages),
-				"retry later or run 'airbyte-agent workspaces list' to inspect workspace pagination",
-			)
-		}
-
-		var page workspaceListPage
-		if err := json.Unmarshal(raw, &page); err != nil {
-			return nil, fmt.Errorf("parsing workspaces: %w", err)
-		}
-
-		for _, item := range page.Data {
-			var workspace workspaceLookupItem
-			if err := json.Unmarshal(item, &workspace); err != nil {
-				return nil, fmt.Errorf("parsing workspace entry: %w", err)
-			}
-			out = append(out, workspace)
-		}
-
-		if page.Next == nil || *page.Next == "" {
-			break
-		}
-		if seenNext[*page.Next] {
-			return nil, client.NewValidationError(
-				"workspace pagination returned a repeated next URL",
-				"retry later or run 'airbyte-agent workspaces list' to inspect workspace pagination",
-			)
-		}
-		seenNext[*page.Next] = true
-		raw, err = c.GetURL(ctx, *page.Next)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return workspace.ID, nil
 }
 
 func intParam(value any) (int, bool) {

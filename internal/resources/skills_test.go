@@ -3,7 +3,6 @@ package resources
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +18,9 @@ func TestSkillsListResolvesWorkspaceAndPassesThrough(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/workspaces":
+			if r.URL.Query().Get("name_contains") != "default" {
+				t.Errorf("name_contains = %q, want default", r.URL.Query().Get("name_contains"))
+			}
 			_, _ = w.Write([]byte(`{"data": [{"id": "ws-1", "name": "Default", "status": "active"}]}`))
 		case "/api/v1/skills":
 			skillsQuery = r.URL.RawQuery
@@ -64,6 +66,9 @@ func TestSkillsSearchSendsQueryCursorAndDefaultLimit(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/workspaces":
+			if r.URL.Query().Get("name_contains") != "default" {
+				t.Errorf("name_contains = %q, want default", r.URL.Query().Get("name_contains"))
+			}
 			_, _ = w.Write([]byte(`{"data": [{"id": "ws-1", "name": "default"}]}`))
 		case "/api/v1/skills/search":
 			if r.URL.Query().Get("query") != "post slack" {
@@ -88,6 +93,20 @@ func TestSkillsSearchSendsQueryCursorAndDefaultLimit(t *testing.T) {
 
 	if _, err := skillsSearch(context.Background(), c, map[string]any{"workspace": "default", "query": "post slack", "cursor": "cur-1"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSkillsListRejectsNonPositiveLimit(t *testing.T) {
+	_, err := skillsList(context.Background(), nil, map[string]any{"workspace": "default", "limit": float64(0)})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	apiErr, ok := err.(*client.APIError)
+	if !ok {
+		t.Fatalf("expected *client.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", apiErr.StatusCode)
 	}
 }
 
@@ -167,6 +186,9 @@ func TestSkillsDocsConnectorSourceWithWorkspaceSendsWorkspaceID(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/workspaces":
+			if r.URL.Query().Get("name_contains") != "default" {
+				t.Errorf("name_contains = %q, want default", r.URL.Query().Get("name_contains"))
+			}
 			_, _ = w.Write([]byte(`{"data": [{"id": "ws-1", "name": "default"}]}`))
 		case "/api/v1/skills/docs":
 			if r.URL.Query().Get("workspace_id") != "ws-1" {
@@ -193,6 +215,9 @@ func TestSkillsDocsStaticSkillResolvesDefaultWorkspace(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/workspaces":
+			if r.URL.Query().Get("name_contains") != "team-ws" {
+				t.Errorf("name_contains = %q, want team-ws", r.URL.Query().Get("name_contains"))
+			}
 			_, _ = w.Write([]byte(`{"data": [{"id": "ws-2", "name": "team-ws"}]}`))
 		case "/api/v1/skills/docs":
 			if r.URL.Query().Get("workspace_id") != "ws-2" {
@@ -257,23 +282,39 @@ func TestSkillsDocsFormatJSONPassesBackendThrough(t *testing.T) {
 	}
 }
 
-func TestResolveWorkspaceIDForSkillsPaginatesAndRejectsDuplicates(t *testing.T) {
-	nextURL := ""
+func TestSkillsDocsRejectsInvalidFormat(t *testing.T) {
+	_, err := skillsDocs(context.Background(), nil, map[string]any{"id": "connector-source:conn-1", "format": "xml"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	apiErr, ok := err.(*client.APIError)
+	if !ok {
+		t.Fatalf("expected *client.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", apiErr.StatusCode)
+	}
+}
+
+func TestResolveWorkspaceIDForSkillsUsesServerFilterAndRejectsDuplicates(t *testing.T) {
+	requests := 0
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/v1/workspaces" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		if r.URL.Query().Get("page") == "2" {
-			_, _ = w.Write([]byte(`{"data": [{"id": "ws-2", "name": "DEFAULT", "status": "active"}]}`))
-			return
+		if r.URL.Query().Get("name_contains") != "default" {
+			t.Errorf("name_contains = %q, want default", r.URL.Query().Get("name_contains"))
 		}
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"data": [{"id": "ws-1", "name": "default", "status": "active"}], "next": %q}`, nextURL)))
+		_, _ = w.Write([]byte(`{"data": [
+			{"id": "ws-1", "name": "default", "status": "active"},
+			{"id": "ws-2", "name": "DEFAULT", "status": "active"}
+		]}`))
 	}))
 	defer apiServer.Close()
-	nextURL = apiServer.URL + "/api/v1/workspaces?page=2"
 
 	c, cleanup := newTestClient(t, apiServer)
 	defer cleanup()
@@ -289,44 +330,12 @@ func TestResolveWorkspaceIDForSkillsPaginatesAndRejectsDuplicates(t *testing.T) 
 	if apiErr.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", apiErr.StatusCode)
 	}
-}
-
-func TestFetchAllWorkspacesRejectsRepeatedNextURL(t *testing.T) {
-	nextURL := ""
-	requests := 0
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/api/v1/workspaces" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"data": [{"id": "ws-1", "name": "default"}], "next": %q}`, nextURL)))
-	}))
-	defer apiServer.Close()
-	nextURL = apiServer.URL + "/api/v1/workspaces?page=2"
-
-	c, cleanup := newTestClient(t, apiServer)
-	defer cleanup()
-
-	_, err := fetchAllWorkspaces(context.Background(), c)
-	if err == nil {
-		t.Fatal("expected repeated next URL validation error")
-	}
-	apiErr, ok := err.(*client.APIError)
-	if !ok {
-		t.Fatalf("expected *client.APIError, got %T", err)
-	}
-	if apiErr.StatusCode != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", apiErr.StatusCode)
-	}
-	if requests != 2 {
-		t.Errorf("requests = %d, want 2", requests)
+	if requests != 1 {
+		t.Errorf("requests = %d, want 1", requests)
 	}
 }
 
-func TestFetchAllWorkspacesRejectsMalformedWorkspaceEntry(t *testing.T) {
+func TestLookupWorkspaceRejectsMalformedWorkspaceEntry(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/v1/workspaces" {
@@ -341,7 +350,7 @@ func TestFetchAllWorkspacesRejectsMalformedWorkspaceEntry(t *testing.T) {
 	c, cleanup := newTestClient(t, apiServer)
 	defer cleanup()
 
-	_, err := fetchAllWorkspaces(context.Background(), c)
+	_, err := lookupWorkspace(context.Background(), c, "default")
 	if err == nil {
 		t.Fatal("expected malformed workspace entry error")
 	}
@@ -397,6 +406,51 @@ func TestRenderSkillDocsSection(t *testing.T) {
 	}
 	if !strings.Contains(got, "```bash\nairbyte-agent skills list\n```") {
 		t.Fatalf("section docs should render code block:\n%s", got)
+	}
+}
+
+func TestRenderSkillDocsEscapesCodeFenceWithBackticks(t *testing.T) {
+	raw := []byte("{\n" +
+		"\"metadata\": {\"id\": \"agent:mcp\", \"kind\": \"static\", \"title\": \"MCP\"},\n" +
+		"\"content\": [{\"type\": \"code\", \"language\": \"markdown\", \"code\": \"before\\n```\\ninside\\n```\"}]\n" +
+		"}")
+	var docs map[string]any
+	if err := json.Unmarshal(raw, &docs); err != nil {
+		t.Fatalf("parsing fixture: %v", err)
+	}
+
+	got := renderSkillDocs(docs)
+	if !strings.Contains(got, "````markdown\nbefore\n```\ninside\n```\n````") {
+		t.Fatalf("expected four-backtick code fence, got:\n%s", got)
+	}
+}
+
+func TestRenderSkillDocsTablePreservesExtraCells(t *testing.T) {
+	raw := []byte(`{
+		"metadata": {"id": "agent:mcp", "kind": "static", "title": "MCP"},
+		"content": [{"type": "table", "headers": ["A"], "rows": [["one", "two", "three"]]}]
+	}`)
+	var docs map[string]any
+	if err := json.Unmarshal(raw, &docs); err != nil {
+		t.Fatalf("parsing fixture: %v", err)
+	}
+
+	got := renderSkillDocs(docs)
+	if !strings.Contains(got, "| A | Extra 1 | Extra 2 |") || !strings.Contains(got, "| one | two | three |") {
+		t.Fatalf("expected extra table cells to render, got:\n%s", got)
+	}
+}
+
+func TestRenderSkillDocsTitleFallsBackToMetadataID(t *testing.T) {
+	raw := []byte(`{"metadata": {"id": "agent:mcp", "kind": "static"}, "content": []}`)
+	var docs map[string]any
+	if err := json.Unmarshal(raw, &docs); err != nil {
+		t.Fatalf("parsing fixture: %v", err)
+	}
+
+	got := renderSkillDocs(docs)
+	if !strings.HasPrefix(got, "# agent:mcp\n") {
+		t.Fatalf("expected title to fall back to metadata.id, got:\n%s", got)
 	}
 }
 
