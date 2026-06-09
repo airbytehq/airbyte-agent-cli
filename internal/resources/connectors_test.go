@@ -790,6 +790,7 @@ func TestConnectorsExecute(t *testing.T) {
 		"action":         "list",
 		"select_fields":  []string{"name", "email"},
 		"exclude_fields": []string{"phone"},
+		"intent":         "answer a refund dispute",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -807,6 +808,9 @@ func TestConnectorsExecute(t *testing.T) {
 	if gotBody["exclude_fields"] == nil {
 		t.Error("expected exclude_fields in body")
 	}
+	if gotBody["intent"] != "answer a refund dispute" {
+		t.Errorf("expected intent to be forwarded, got %v", gotBody["intent"])
+	}
 
 	raw, ok := result.(json.RawMessage)
 	if !ok {
@@ -816,6 +820,32 @@ func TestConnectorsExecute(t *testing.T) {
 	var parsed map[string]any
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("parsing result: %v", err)
+	}
+}
+
+func TestConnectorsExecuteOmitsIntentWhenAbsent(t *testing.T) {
+	var gotBody map[string]any
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data": []}`))
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	_, err := connectorsExecute(context.Background(), c, map[string]any{
+		"id":     "conn-1",
+		"entity": "contacts",
+		"action": "list",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, present := gotBody["intent"]; present {
+		t.Errorf("expected intent to be omitted from body when not supplied, got %v", gotBody["intent"])
 	}
 }
 

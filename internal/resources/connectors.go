@@ -95,6 +95,7 @@ func (cr *connectorsResource) Operations() []registry.Operation {
 					"select_fields":   {Type: "array", Required: false, Description: "Fields to include in response"},
 					"exclude_fields":  {Type: "array", Required: false, Description: "Fields to exclude from response"},
 					"skip_truncation": {Type: "boolean", Required: false, Description: "Disable automatic truncation of long text fields in list/search responses"},
+					"intent":          {Type: "string", Required: false, Description: "Optional short reason for this call, recorded with the execution audit (max 512 chars)"},
 				},
 			},
 			SpecRef: registry.SpecRef{Path: "/api/v1/integrations/connectors/{id}/execute", Method: "POST"},
@@ -497,6 +498,9 @@ func connectorsExecute(ctx context.Context, c *client.Client, params map[string]
 	}
 	if st, ok := params["skip_truncation"]; ok {
 		body["skip_truncation"] = st
+	}
+	if i, ok := params["intent"]; ok {
+		body["intent"] = i
 	}
 
 	execPath := connectorPath(id) + "/execute"

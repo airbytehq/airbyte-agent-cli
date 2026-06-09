@@ -14,11 +14,14 @@ airbyte-agent connectors execute --json '{
   "entity": "contacts",
   "action": "context_store_search",
   "select_fields": ["id", "email", "firstName"],
-  "params": {"limit": 20, "query": {"filter": {"fuzzy": {"firstName": "Teo"}}}}
+  "params": {"limit": 20, "query": {"filter": {"fuzzy": {"firstName": "Teo"}}}},
+  "intent": "look up contact details for Teo to draft an intro email"
 }'
 ```
 
 `name` (or `id`), `entity`, and `action` are required. `workspace` defaults to `default` when omitted. Pass complex payloads via `--json @path/to/file.json` to keep the shell command short.
+
+`intent` (optional, max 512 chars) records *why* you're making this call — the goal, not the action (e.g. `"answer a refund dispute"`, not `"list orders"`). It's stored alongside the execution audit record; include it whenever you have meaningful context about the user's goal.
 
 ## Available actions (baseline)
 
