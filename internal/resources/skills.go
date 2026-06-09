@@ -14,6 +14,7 @@ import (
 const (
 	connectorSourceSkillPrefix = "connector-source:"
 	defaultSkillsLimit         = 20
+	maxWorkspaceLookupPages    = 100
 )
 
 type skillsResource struct{}
@@ -155,7 +156,7 @@ func skillsPageParams(params map[string]any) map[string]string {
 }
 
 func shouldResolveWorkspaceForSkillDocs(id string, params map[string]any) bool {
-	if _, supplied := params["workspace"]; supplied {
+	if workspace, supplied := params["workspace"].(string); supplied && workspace != "" {
 		return true
 	}
 	return !strings.HasPrefix(id, connectorSourceSkillPrefix)
@@ -201,7 +202,15 @@ func fetchAllWorkspaces(ctx context.Context, c *client.Client) ([]workspaceLooku
 	}
 
 	var out []workspaceLookupItem
-	for {
+	seenNext := map[string]bool{}
+	for pageCount := 0; ; pageCount++ {
+		if pageCount >= maxWorkspaceLookupPages {
+			return nil, client.NewValidationError(
+				fmt.Sprintf("workspace pagination exceeded %d pages", maxWorkspaceLookupPages),
+				"retry later or run 'airbyte-agent workspaces list' to inspect workspace pagination",
+			)
+		}
+
 		var page workspaceListPage
 		if err := json.Unmarshal(raw, &page); err != nil {
 			return nil, fmt.Errorf("parsing workspaces: %w", err)
@@ -210,7 +219,7 @@ func fetchAllWorkspaces(ctx context.Context, c *client.Client) ([]workspaceLooku
 		for _, item := range page.Data {
 			var workspace workspaceLookupItem
 			if err := json.Unmarshal(item, &workspace); err != nil {
-				continue
+				return nil, fmt.Errorf("parsing workspace entry: %w", err)
 			}
 			out = append(out, workspace)
 		}
@@ -218,6 +227,13 @@ func fetchAllWorkspaces(ctx context.Context, c *client.Client) ([]workspaceLooku
 		if page.Next == nil || *page.Next == "" {
 			break
 		}
+		if seenNext[*page.Next] {
+			return nil, client.NewValidationError(
+				"workspace pagination returned a repeated next URL",
+				"retry later or run 'airbyte-agent workspaces list' to inspect workspace pagination",
+			)
+		}
+		seenNext[*page.Next] = true
 		raw, err = c.GetURL(ctx, *page.Next)
 		if err != nil {
 			return nil, err

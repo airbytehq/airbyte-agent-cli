@@ -73,14 +73,14 @@ func skillDocsContentHasOutline(content []any) bool {
 func renderSkillDocsBlock(rawBlock any) []string {
 	block, ok := rawBlock.(map[string]any)
 	if !ok {
-		return []string{compactJSON(rawBlock)}
+		return []string{"", compactJSON(rawBlock)}
 	}
 
 	switch block["type"] {
 	case "heading":
 		level, ok := headingLevel(block["level"])
 		if !ok {
-			return []string{compactJSON(block)}
+			return []string{"", compactJSON(block)}
 		}
 		return []string{"", strings.Repeat("#", level) + " " + stringValue(block["text"])}
 	case "paragraph":
@@ -98,14 +98,14 @@ func renderSkillDocsBlock(rawBlock any) []string {
 	case "table":
 		return renderSkillDocsTable(block)
 	default:
-		return []string{compactJSON(block)}
+		return []string{"", compactJSON(block)}
 	}
 }
 
 func renderSkillDocsTable(block map[string]any) []string {
 	rawHeaders := sliceValue(block["headers"])
 	if len(rawHeaders) == 0 {
-		return []string{compactJSON(block)}
+		return []string{"", compactJSON(block)}
 	}
 
 	headers := make([]string, 0, len(rawHeaders))

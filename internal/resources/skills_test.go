@@ -131,6 +131,37 @@ func TestSkillsDocsConnectorSourceOmitsWorkspaceByDefault(t *testing.T) {
 	}
 }
 
+func TestSkillsDocsConnectorSourceWithEmptyWorkspaceOmitsWorkspace(t *testing.T) {
+	var workspaceRequests int
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/workspaces":
+			workspaceRequests++
+			_, _ = w.Write([]byte(`{"data": [{"id": "ws-1", "name": "default"}]}`))
+		case "/api/v1/skills/docs":
+			if _, ok := r.URL.Query()["workspace_id"]; ok {
+				t.Errorf("empty workspace should not scope connector-source docs, got %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write(skillDocsFixtureJSON())
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	if _, err := skillsDocs(context.Background(), c, map[string]any{"id": "connector-source:conn-1", "workspace": ""}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if workspaceRequests != 0 {
+		t.Fatalf("expected no workspace resolution, got %d requests", workspaceRequests)
+	}
+}
+
 func TestSkillsDocsConnectorSourceWithWorkspaceSendsWorkspaceID(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -257,6 +288,65 @@ func TestResolveWorkspaceIDForSkillsPaginatesAndRejectsDuplicates(t *testing.T) 
 	}
 	if apiErr.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", apiErr.StatusCode)
+	}
+}
+
+func TestFetchAllWorkspacesRejectsRepeatedNextURL(t *testing.T) {
+	nextURL := ""
+	requests := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/workspaces" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"data": [{"id": "ws-1", "name": "default"}], "next": %q}`, nextURL)))
+	}))
+	defer apiServer.Close()
+	nextURL = apiServer.URL + "/api/v1/workspaces?page=2"
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	_, err := fetchAllWorkspaces(context.Background(), c)
+	if err == nil {
+		t.Fatal("expected repeated next URL validation error")
+	}
+	apiErr, ok := err.(*client.APIError)
+	if !ok {
+		t.Fatalf("expected *client.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", apiErr.StatusCode)
+	}
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2", requests)
+	}
+}
+
+func TestFetchAllWorkspacesRejectsMalformedWorkspaceEntry(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/workspaces" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data": ["not-an-object"]}`))
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	_, err := fetchAllWorkspaces(context.Background(), c)
+	if err == nil {
+		t.Fatal("expected malformed workspace entry error")
+	}
+	if !strings.Contains(err.Error(), "parsing workspace entry") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
