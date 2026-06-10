@@ -5127,7 +5127,7 @@
             "description": "Context Store search readiness for this connector, or null when readiness metadata is unavailable."
           },
           "docs_skill_id": {
-            "description": "Skill ID to pass to read_skill_docs for connector usage docs.",
+            "description": "Skill ID to pass to the CLI skills docs command for connector usage docs.",
             "title": "Docs Skill Id",
             "type": "string"
           },

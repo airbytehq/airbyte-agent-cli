@@ -67,7 +67,7 @@ The CLI uses a **resource-registry** pattern:
 | `register.go` | `RegisterAll()` -- registers all resources in the global registry |
 | `organizations.go` | `organizations list\|use` -- list and persist a default organization |
 | `workspaces.go` | `workspaces list` -- list/filter workspaces with automatic cursor pagination |
-| `connectors.go` | `connectors list\|list-available\|describe\|inspect\|execute\|delete` -- connector management with name->ID resolution hooks |
+| `connectors.go` | `connectors list\|list-available\|describe\|inspect\|execute\|update\|delete` -- connector management with name->ID resolution hooks |
 | `skills.go` | `skills list\|search\|docs` -- discover and render connector/static skill docs |
 | `connectors_create.go` | `connectors create` -- interactive browser-based credential flow (OAuth session + polling) |
 
