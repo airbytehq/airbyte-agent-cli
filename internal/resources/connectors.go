@@ -48,9 +48,9 @@ func (cr *connectorsResource) Operations() []registry.Operation {
 		},
 		{
 			Name:        "describe",
-			Description: "Describe a connector's schema",
+			Description: "Describe a connector's schema (legacy — prefer 'connectors inspect' + 'skills docs')",
 			Schema: registry.OperationSchema{
-				Description: "Get connector details and schema description",
+				Description: "Get connector details and schema description. Legacy compatibility command; prefer 'connectors inspect' plus 'skills docs' for new workflows.",
 				Params: map[string]registry.ParamSchema{
 					"name":      {Type: "string", Required: false, Description: "Connector name (requires workspace)"},
 					"workspace": {Type: "string", Required: false, Description: "Workspace name (defaults to 'default' when used with name)"},
