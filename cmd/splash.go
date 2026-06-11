@@ -30,7 +30,9 @@ var splashGroups = [][]splashEntry{
 	},
 	{
 		{"airbyte-agent connectors list", "List connectors in a workspace"},
-		{"airbyte-agent connectors describe", "Inspect a connector's entities and actions"},
+		{"airbyte-agent connectors inspect", "Inspect connector metadata and get docs_skill_id"},
+		{"airbyte-agent skills docs", "Read connector usage docs before execute"},
+		{"airbyte-agent connectors describe", "Legacy schema command; prefer inspect + skills docs"},
 		{"airbyte-agent connectors execute", "Run an action against a connector entity"},
 		{"airbyte-agent connectors create", "Install a new connector"},
 		{"airbyte-agent connectors delete", "Remove a connector from a workspace"},

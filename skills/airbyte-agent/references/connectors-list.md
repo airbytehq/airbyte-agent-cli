@@ -15,7 +15,7 @@ airbyte-agent connectors list --json '{}'
 
 ## When to use
 
-- Confirming a connector exists before calling `describe` or `execute`.
+- Confirming a connector exists before calling `inspect`, `skills docs`, or `execute`.
 - Discovering exact connector names to pass to other commands.
 - Checking the status of existing connectors.
 - Checking the context-store status of a connector (e.g. `loading`, `building`, `preview`, `ready`).
@@ -45,10 +45,12 @@ airbyte-agent connectors list --fields data.id,data.context_store_status --json 
 ## Related commands
 
 - `connectors list-available` — list templates available to install (different command, different purpose).
-- `connectors describe` — inspect a specific connector's entities and actions.
+- `connectors inspect` — inspect metadata and get `docs_skill_id` for `skills docs`.
+- `skills docs` — read connector usage docs before `execute`.
+- `connectors describe` — legacy compatibility command for older workflows.
 - `connectors create` — install a new connector from a template.
 
 ## Hints
 
 - Names returned here can be matched in subsequent commands by connector instance name, template display name, OR template slug — all case-insensitive.
-- If two connectors share a name, `execute`/`describe`/`delete` will return a validation error — pass `"id": "<uuid>"` in the JSON payload instead.
+- If two connectors share a name, `inspect`/`execute`/`describe`/`delete` will return a validation error — pass `"id": "<uuid>"` in the JSON payload instead.

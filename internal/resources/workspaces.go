@@ -91,34 +91,51 @@ func useWorkspace(ctx context.Context, c *client.Client, params map[string]any) 
 // returns its canonical-cased name. Match is case-insensitive (so the user
 // can type "Default" and we'll accept "default").
 func lookupWorkspaceName(ctx context.Context, c *client.Client, name string) (string, error) {
+	workspace, err := lookupWorkspace(ctx, c, name)
+	if err != nil {
+		return "", err
+	}
+	return workspace.Name, nil
+}
+
+func lookupWorkspace(ctx context.Context, c *client.Client, name string) (workspaceLookupItem, error) {
 	raw, err := c.Get(ctx, "/api/v1/workspaces", map[string]string{
 		"name_contains": name,
 	})
 	if err != nil {
-		return "", err
+		return workspaceLookupItem{}, err
 	}
 
 	var page workspaceListPage
 	if err := json.Unmarshal(raw, &page); err != nil {
-		return "", fmt.Errorf("parsing workspaces: %w", err)
+		return workspaceLookupItem{}, fmt.Errorf("parsing workspaces: %w", err)
 	}
 
+	var matches []workspaceLookupItem
 	for _, item := range page.Data {
-		var ws struct {
-			Name string `json:"name"`
-		}
+		var ws workspaceLookupItem
 		if err := json.Unmarshal(item, &ws); err != nil {
 			continue
 		}
-		if strings.EqualFold(ws.Name, name) {
-			return ws.Name, nil
+		if ws.ID != "" && ws.IsActive() && strings.EqualFold(ws.Name, name) {
+			matches = append(matches, ws)
 		}
 	}
 
-	return "", client.NewNotFoundError(
-		fmt.Sprintf("workspace %q not found", name),
-		"run 'airbyte-agent workspaces list' to see available workspaces",
-	)
+	switch len(matches) {
+	case 0:
+		return workspaceLookupItem{}, client.NewNotFoundError(
+			fmt.Sprintf("active workspace %q not found", name),
+			"run 'airbyte-agent workspaces list' to see available workspaces",
+		)
+	case 1:
+		return matches[0], nil
+	default:
+		return workspaceLookupItem{}, client.NewValidationError(
+			fmt.Sprintf("ambiguous: %d active workspaces match %q case-insensitively", len(matches), name),
+			"use a workspace name with a unique case-insensitive match",
+		)
+	}
 }
 
 func listWorkspaces(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
@@ -130,15 +147,7 @@ func listWorkspaces(ctx context.Context, c *client.Client, params map[string]any
 		qp["status"] = v
 	}
 
-	var limit int
-	switch n := params["limit"].(type) {
-	case float64:
-		limit = int(n)
-	case int:
-		limit = n
-	case int64:
-		limit = int(n)
-	}
+	limit, _ := intParam(params["limit"])
 	if limit > 0 {
 		qp["limit"] = fmt.Sprintf("%d", limit)
 	}

@@ -409,6 +409,55 @@ func TestUseWorkspace_NotFound(t *testing.T) {
 	}
 }
 
+func TestUseWorkspace_RejectsAmbiguousActiveWorkspace(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data": [
+			{"id": "ws-1", "name": "Production", "status": "active"},
+			{"id": "ws-2", "name": "production", "status": "active"}
+		]}`))
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	_, err := useWorkspace(context.Background(), c, map[string]any{"name": "production"})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	apiErr, ok := err.(*client.APIError)
+	if !ok {
+		t.Fatalf("expected *client.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", apiErr.StatusCode)
+	}
+}
+
+func TestUseWorkspace_IgnoresInactiveWorkspace(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data": [{"id": "ws-1", "name": "Production", "status": "deleted"}]}`))
+	}))
+	defer apiServer.Close()
+
+	c, cleanup := newTestClient(t, apiServer)
+	defer cleanup()
+
+	_, err := useWorkspace(context.Background(), c, map[string]any{"name": "production"})
+	if err == nil {
+		t.Fatal("expected not_found error, got nil")
+	}
+	apiErr, ok := err.(*client.APIError)
+	if !ok {
+		t.Fatalf("expected *client.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", apiErr.StatusCode)
+	}
+}
+
 func TestUseWorkspace_MissingName(t *testing.T) {
 	_, err := useWorkspace(context.Background(), nil, map[string]any{})
 	if err == nil {
@@ -486,6 +535,7 @@ func TestResourceMetadata(t *testing.T) {
 		{&organizationsResource{}, "organizations", "Manage organizations"},
 		{&workspacesResource{}, "workspaces", "Manage workspaces"},
 		{&connectorsResource{}, "connectors", "Create, manage, and execute connectors"},
+		{&skillsResource{}, "skills", "Discover and read connector and agent skill docs"},
 	}
 
 	for _, tt := range tests {
@@ -508,6 +558,7 @@ func TestEveryOpSpecRefResolves(t *testing.T) {
 		&organizationsResource{},
 		&workspacesResource{},
 		&connectorsResource{},
+		&skillsResource{},
 	}
 	for _, res := range resources {
 		for _, op := range res.Operations() {

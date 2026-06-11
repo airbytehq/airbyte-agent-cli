@@ -6,4 +6,5 @@ func RegisterAll() {
 	registry.Register(&organizationsResource{})
 	registry.Register(&workspacesResource{})
 	registry.Register(&connectorsResource{})
+	registry.Register(&skillsResource{})
 }

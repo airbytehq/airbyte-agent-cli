@@ -67,7 +67,8 @@ The CLI uses a **resource-registry** pattern:
 | `register.go` | `RegisterAll()` -- registers all resources in the global registry |
 | `organizations.go` | `organizations list\|use` -- list and persist a default organization |
 | `workspaces.go` | `workspaces list` -- list/filter workspaces with automatic cursor pagination |
-| `connectors.go` | `connectors list\|list-available\|describe\|execute\|delete` -- connector management with name->ID resolution hooks |
+| `connectors.go` | `connectors list\|list-available\|describe\|inspect\|execute\|update\|delete` -- connector management with name->ID resolution hooks |
+| `skills.go` | `skills list\|search\|docs` -- discover and render connector/static skill docs |
 | `connectors_create.go` | `connectors create` -- interactive browser-based credential flow (OAuth session + polling) |
 
 ### Client (`internal/client/`)
@@ -96,10 +97,14 @@ The CLI uses a **resource-registry** pattern:
 | `connectors` | `list` | List workspace connectors | `workspace` (required) |
 | `connectors` | `list-available` | List connector templates | -- |
 | `connectors` | `describe` | Get connector details + schema | `name`+`workspace` or `--id` |
+| `connectors` | `inspect` | Get connector metadata, readiness, and `docs_skill_id` | `name`+`workspace` or `--id` |
 | `connectors` | `execute` | Execute a connector action | `name`+`workspace` or `--id`, `entity`, `action`, `params` |
 | `connectors` | `create` | Interactive credential flow | `workspace`, `name` (template) or `id` (template ID) |
 | `connectors` | `update` | Open the browser to edit a connector's credentials | `name`+`workspace` or `--id` |
 | `connectors` | `delete` | Delete a connector | `name`+`workspace` or `--id` |
+| `skills` | `list` | List connector/static skill docs | `workspace`, `limit`, `cursor` |
+| `skills` | `search` | Search connector/static skill docs | `workspace`, `query`, `limit`, `cursor` |
+| `skills` | `docs` | Read rendered skill docs or raw docs JSON | `id`, `section`, `workspace`, `format` |
 
 ### Common Flags
 
