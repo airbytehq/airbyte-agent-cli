@@ -335,7 +335,7 @@ func TestResolveWorkspaceIDForSkillsUsesServerFilterAndRejectsDuplicates(t *test
 	}
 }
 
-func TestLookupWorkspaceRejectsMalformedWorkspaceEntry(t *testing.T) {
+func TestLookupWorkspaceSkipsMalformedWorkspaceEntry(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/v1/workspaces" {
@@ -343,19 +343,19 @@ func TestLookupWorkspaceRejectsMalformedWorkspaceEntry(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		_, _ = w.Write([]byte(`{"data": ["not-an-object"]}`))
+		_, _ = w.Write([]byte(`{"data": ["not-an-object", {"id": "ws-1", "name": "default", "status": "active"}]}`))
 	}))
 	defer apiServer.Close()
 
 	c, cleanup := newTestClient(t, apiServer)
 	defer cleanup()
 
-	_, err := lookupWorkspace(context.Background(), c, "default")
-	if err == nil {
-		t.Fatal("expected malformed workspace entry error")
+	workspace, err := lookupWorkspace(context.Background(), c, "default")
+	if err != nil {
+		t.Fatalf("lookupWorkspace returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "parsing workspace entry") {
-		t.Fatalf("unexpected error: %v", err)
+	if workspace.ID != "ws-1" {
+		t.Fatalf("workspace ID = %q, want ws-1", workspace.ID)
 	}
 }
 

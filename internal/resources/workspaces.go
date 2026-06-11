@@ -115,7 +115,7 @@ func lookupWorkspace(ctx context.Context, c *client.Client, name string) (worksp
 	for _, item := range page.Data {
 		var ws workspaceLookupItem
 		if err := json.Unmarshal(item, &ws); err != nil {
-			return workspaceLookupItem{}, fmt.Errorf("parsing workspace entry: %w", err)
+			continue
 		}
 		if ws.ID != "" && ws.IsActive() && strings.EqualFold(ws.Name, name) {
 			matches = append(matches, ws)
