@@ -5765,6 +5765,23 @@
             "title": "Is Experimental",
             "default": false
           },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
+          },
           "created_at": {
             "anyOf": [
               {
@@ -6502,6 +6519,16 @@
         "title": "RowFilteringMapperConfig",
         "description": "Configuration for row filtering mapper - uses snake_case.\n\nFilters rows based on a condition. Only rows where the specified field\nequals the provided value are kept."
       },
+      "RuntimeMode": {
+        "type": "string",
+        "enum": [
+          "direct_only",
+          "context_store_only",
+          "direct_and_context_store"
+        ],
+        "title": "RuntimeMode",
+        "description": "Runtime execution mode for a connector: whether it runs Direct, Context Store, or both."
+      },
       "ScopeType": {
         "type": "string",
         "enum": [
@@ -7086,6 +7113,23 @@
             "title": "Is Experimental",
             "default": false
           },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
+          },
           "created_at": {
             "anyOf": [
               {
@@ -7367,6 +7411,23 @@
             "title": "Is Experimental",
             "default": false
           },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
+          },
           "created_at": {
             "anyOf": [
               {
@@ -7504,6 +7565,23 @@
           "mode": {
             "$ref": "#/components/schemas/SourceConfigTemplateMode",
             "default": "REPLICATION"
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -7680,6 +7758,23 @@
             "type": "boolean",
             "title": "Is Experimental",
             "default": false
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -7859,6 +7954,23 @@
           "mode": {
             "$ref": "#/components/schemas/SourceConfigTemplateMode",
             "default": "REPLICATION"
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
