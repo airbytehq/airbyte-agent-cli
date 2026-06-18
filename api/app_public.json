@@ -3740,7 +3740,7 @@
           "Workspaces"
         ],
         "summary": "Update Workspace",
-        "description": "Update a workspace's name, status, and/or cache setting.\n- Set `name` to update the workspace name\n- Set `status` to 'active' or 'inactive' to change the workspace status\n- When setting status to 'inactive', all active connections for the workspace will be automatically disabled\n- Set `cache_enabled` to true/false to enable or disable Context Store caching for this workspace",
+        "description": "Update a workspace's name, status, color, and/or cache setting.\n- Set `name` to update the workspace name\n- Set `status` to 'active' or 'inactive' to change the workspace status\n- When setting status to 'inactive', all active connections for the workspace will be automatically disabled\n- Set `color` to change the workspace display color\n- Set `cache_enabled` to true/false to enable or disable Context Store caching for this workspace",
         "operationId": "update_workspaces_workspace_id",
         "security": [
           {
@@ -8396,6 +8396,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8430,6 +8435,7 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
           "updated_at"
@@ -8480,6 +8486,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8503,6 +8514,11 @@
             "format": "date-time",
             "title": "Updated At",
             "description": "Timestamp when the workspace was last updated"
+          },
+          "can_manage": {
+            "type": "boolean",
+            "title": "Can Manage",
+            "description": "Whether the current caller can manage workspace settings and members"
           }
         },
         "type": "object",
@@ -8514,9 +8530,11 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "can_manage"
         ],
         "title": "WorkspaceListItem"
       },
@@ -8608,6 +8626,18 @@
             ],
             "description": "Set status to active or inactive"
           },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color",
+            "description": "Optional display color"
+          },
           "cache_enabled": {
             "anyOf": [
               {
@@ -8668,6 +8698,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8702,6 +8737,7 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
           "updated_at"
