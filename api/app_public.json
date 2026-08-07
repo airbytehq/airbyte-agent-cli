@@ -4649,6 +4649,29 @@
             "title": "Updated At",
             "description": "Timestamp when cache metadata was last updated, when available."
           },
+          "sync_status": {
+            "type": "string",
+            "title": "Sync Status",
+            "description": "Current cache synchronization health."
+          },
+          "is_stale": {
+            "type": "boolean",
+            "title": "Is Stale",
+            "description": "Whether the last successful sync is older than its sync cadence."
+          },
+          "last_successful_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Sync At",
+            "description": "Timestamp of the most recent successful Context Store sync."
+          },
           "semantic_search_status": {
             "items": {
               "$ref": "#/components/schemas/ConnectorInspectSemanticSearchStatus"
@@ -4663,7 +4686,9 @@
           "entity",
           "status",
           "ready_for_search",
-          "supported"
+          "supported",
+          "sync_status",
+          "is_stale"
         ],
         "title": "ConnectorInspectConfiguredCacheEntity"
       },
@@ -4696,6 +4721,10 @@
             "type": "array",
             "title": "Configured Cache Entities",
             "description": "Cache entities configured for this connector instance."
+          },
+          "health": {
+            "$ref": "#/components/schemas/ContextStoreHealthSummary",
+            "description": "Compact aggregate Context Store health summary."
           }
         },
         "type": "object",
@@ -5608,6 +5637,42 @@
           "destination"
         ],
         "title": "ConnectorType"
+      },
+      "ContextStoreHealthSummary": {
+        "properties": {
+          "last_successful_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Sync At",
+            "description": "Timestamp of the most recent successful Context Store sync."
+          },
+          "is_stale": {
+            "type": "boolean",
+            "title": "Is Stale",
+            "description": "Whether the most recent successful sync is older than its sync cadence.",
+            "default": false
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Type"
+          }
+        },
+        "type": "object",
+        "title": "ContextStoreHealthSummary"
       },
       "ContextStoreInactivityWarning": {
         "properties": {
