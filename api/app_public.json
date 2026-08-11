@@ -3108,6 +3108,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3255,6 +3265,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3411,6 +3431,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
