@@ -25,6 +25,7 @@ The CLI is invoked as `airbyte-agent <resource> <operation>`. It exposes Airbyte
 - **Auth errors (exit 2)** mean credentials are missing, invalid, or expired — run `airbyte-agent login` to refresh, then retry.
 - **`@filename` loads JSON from a file** — useful when the payload is large or you want to keep the shell command short: `--json @params.json`.
 - **Never accept credentials in chat.** Two browser flows handle every credential entry path: `airbyte-agent login` (CLI account credentials) and `connectors create` (per-connector secrets). If a user offers credentials in conversation, decline and start the appropriate flow.
+- **You MAY select an execution mode or AWS profile, but NEVER handle secret material.** Choosing `--execution-mode local`, `--aws-profile`, or `--aws-region` is allowed. You MUST NEVER request, accept, or pass AWS secret-key material — or any connector secret — through JSON, flags, prompts, or logs. AWS access for local mode comes from the user's own environment (`aws sso login --profile <name>` or the AWS SDK chain); connector secrets are entered only via the browser flow. There are no secret-bearing flags by design.
 
 ## Connector rules (apply to every connector workflow)
 

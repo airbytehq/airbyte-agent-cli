@@ -1,0 +1,48 @@
+openapi: 3.0.0
+info:
+  title: Synthetic Scoped-Server-Variable Connector
+  version: "1.0.0"
+servers:
+  - url: https://{subdomain}.example.test/{region}
+    variables:
+      subdomain:
+        default: app
+        x-airbyte-scope: credentials.account.subdomain
+      region:
+        default: us
+        enum:
+          - us
+          - eu
+        x-airbyte-scope: settings.region
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+  - apiKey: []
+paths:
+  /records:
+    get:
+      operationId: listRecords
+      x-airbyte-entity: record
+      x-airbyte-action: list
+      parameters:
+        - name: X-Trace-Id
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: session
+          in: cookie
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object

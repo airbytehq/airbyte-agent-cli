@@ -82,9 +82,9 @@ func (cr *connectorsResource) Operations() []registry.Operation {
 		},
 		{
 			Name:        "execute",
-			Description: "Execute a connector action",
+			Description: "Execute a connector action (honors the global --execution-mode opt-in: hosted by default, or local)",
 			Schema: registry.OperationSchema{
-				Description: "Execute an action on a connector",
+				Description: "Execute an action on a connector. By default the action runs on the Airbyte-hosted API. When the global --execution-mode local opt-in is set (or AIRBYTE_EXECUTION_MODE=local), the action is prepared by the API and executed locally, resolving secret coordinates via the configured secrets provider; the response shape is unchanged.",
 				Params: map[string]registry.ParamSchema{
 					"name":            {Type: "string", Required: false, Description: "Connector name (requires workspace)"},
 					"workspace":       {Type: "string", Required: false, Description: "Workspace name (required when using name)"},
@@ -472,39 +472,6 @@ func connectorsDescribe(ctx context.Context, c *client.Client, params map[string
 func connectorsInspect(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
 	id, _ := params["id"].(string)
 	raw, err := c.Get(ctx, connectorPath(id)+"/inspect", nil)
-	if err != nil {
-		return nil, err
-	}
-	return raw, nil
-}
-
-func connectorsExecute(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
-	id, _ := params["id"].(string)
-	entity, _ := params["entity"].(string)
-	action, _ := params["action"].(string)
-
-	body := map[string]any{
-		"entity": entity,
-		"action": action,
-	}
-	if p, ok := params["params"]; ok {
-		body["params"] = p
-	}
-	if sf, ok := params["select_fields"]; ok {
-		body["select_fields"] = sf
-	}
-	if ef, ok := params["exclude_fields"]; ok {
-		body["exclude_fields"] = ef
-	}
-	if st, ok := params["skip_truncation"]; ok {
-		body["skip_truncation"] = st
-	}
-	if i, ok := params["intent"]; ok {
-		body["intent"] = i
-	}
-
-	execPath := connectorPath(id) + "/execute"
-	raw, err := c.Post(ctx, execPath, body)
 	if err != nil {
 		return nil, err
 	}

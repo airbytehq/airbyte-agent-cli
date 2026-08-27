@@ -29,6 +29,7 @@ func main() {
 			client.WithDebugFunc(cmd.GetVerbose),
 			client.WithDefaultWorkspace(settings.Workspace),
 			client.WithAllowDestructive(settings.AllowDestructive),
+			client.WithExecutionConfigFunc(resolveExecutionConfig),
 		)
 		t = telemetry.New(
 			telemetry.ResolveMode(settings.TelemetryEnabled),
@@ -74,6 +75,22 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+// resolveExecutionConfig is the deferred resolver wired into the API client.
+// It reads the root flag getters lazily (after Cobra has parsed argv) and
+// applies env precedence + validation via config.ResolveExecutionConfig.
+//
+// A resolution error (e.g. an invalid --execution-mode) is propagated
+// unchanged, NOT swallowed into a hosted fallback: connector execution maps it
+// to a typed validation_error (exit 4) so invalid runtime configuration never
+// silently runs hosted.
+func resolveExecutionConfig() (config.ExecutionConfig, error) {
+	return config.ResolveExecutionConfig(
+		cmd.GetExecutionMode(),
+		cmd.GetAWSProfile(),
+		cmd.GetAWSRegion(),
+	)
 }
 
 // versionCheckEnabled resolves whether the version-check nudge should

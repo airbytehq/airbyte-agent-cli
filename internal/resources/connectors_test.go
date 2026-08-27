@@ -849,6 +849,53 @@ func TestConnectorsExecuteOmitsIntentWhenAbsent(t *testing.T) {
 	}
 }
 
+// TestConnectorsExecuteParamSchemaUnaffectedByGlobalFlags guards that the
+// runtime execution controls (execution mode / AWS profile / region) stay
+// ROOT persistent flags and never leak into the operation param schema, and
+// that the local-execution bundle never becomes a CLI input. The param schema
+// is what drives both the per-flag CLI surface and --json input parsing, so an
+// unchanged schema means --json behavior is unchanged too.
+func TestConnectorsExecuteParamSchemaUnaffectedByGlobalFlags(t *testing.T) {
+	var execOp *registry.Operation
+	for _, op := range (&connectorsResource{}).Operations() {
+		if op.Name == "execute" {
+			o := op
+			execOp = &o
+		}
+	}
+	if execOp == nil {
+		t.Fatal("execute operation not found")
+	}
+
+	wantParams := map[string]bool{
+		"name": true, "workspace": true, "id": true,
+		"entity": true, "action": true, "params": true,
+		"select_fields": true, "exclude_fields": true,
+		"skip_truncation": true, "intent": true,
+	}
+	for name := range execOp.Schema.Params {
+		if !wantParams[name] {
+			t.Errorf("unexpected execute param %q — runtime/global controls must not be operation params", name)
+		}
+	}
+	for want := range wantParams {
+		if _, ok := execOp.Schema.Params[want]; !ok {
+			t.Errorf("execute param %q missing — param schema changed unexpectedly", want)
+		}
+	}
+	for _, forbidden := range []string{"execution_mode", "aws_profile", "aws_region", "bundle"} {
+		if _, ok := execOp.Schema.Params[forbidden]; ok {
+			t.Errorf("execute param schema must not expose %q", forbidden)
+		}
+	}
+
+	// SpecRef must remain the hosted /execute route (the SpecRef is unchanged
+	// by the local opt-in).
+	if execOp.SpecRef.Path != "/api/v1/integrations/connectors/{id}/execute" || execOp.SpecRef.Method != "POST" {
+		t.Errorf("execute SpecRef = %s %s, want POST /api/v1/integrations/connectors/{id}/execute", execOp.SpecRef.Method, execOp.SpecRef.Path)
+	}
+}
+
 func TestConnectorsDelete(t *testing.T) {
 	var gotMethod, gotPath string
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

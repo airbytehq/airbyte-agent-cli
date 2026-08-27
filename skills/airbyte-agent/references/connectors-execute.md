@@ -208,6 +208,31 @@ airbyte-agent connectors execute --fields data.id,data.email,meta.has_more --jso
 > [!IMPORTANT]
 > **Write failure handling.** If a write call returns an error or indicates the target was unreachable, do NOT retry with a different target identifier (channel, recipient, conversation, repository, record, etc.). Surface the failure to the caller and let them decide. Silently substituting a destination is forbidden — return the failure instead of completing the work against a different target.
 
+## Local execution mode (opt-in)
+
+By default `execute` runs **hosted** — Airbyte performs the connector request. **Local mode** is an opt-in path in which the CLI performs the request itself and reads the connector's secrets from the user's **own AWS Secrets Manager**. The JSON payload and the result you read are the same as hosted; only *where* the request runs changes.
+
+**When to use it:** only when the user explicitly wants the connector request to run from their machine / their AWS account (e.g. data residency, network egress, or their own audit boundary). Otherwise leave it hosted.
+
+Enable it with the global flag or env var — these are **global** (they precede `connectors execute`) and compose with `--json`:
+
+```bash
+# Preferred: env var. AWS auth comes from the user's environment.
+AIRBYTE_EXECUTION_MODE=local \
+  airbyte-agent connectors execute --json '{"name":"hubspot","entity":"contacts","action":"list","select_fields":["id","email"]}'
+
+# Or select an AWS profile the user has already logged into.
+airbyte-agent --execution-mode local --aws-profile production --aws-region us-east-1 \
+  connectors execute --json '{"name":"hubspot","entity":"contacts","action":"list","select_fields":["id","email"]}'
+```
+
+> [!IMPORTANT]
+> **You never handle secrets.** You may set `--execution-mode`, `--aws-profile`, `--aws-region`. You must NEVER request, accept, or pass AWS secret-key material or any connector secret — there are no secret-bearing flags by design. If AWS auth is missing, ask the user to run `aws sso login --profile <name>`; do not try to supply keys.
+
+**Fail-closed:** local execution **never falls back to hosted**. If it can't run, the command errors — to run hosted, re-invoke *without* `--execution-mode local`.
+
+**Supported in local mode:** OpenAPI-3 connectors; `list`/`get`/`create`/`update`/`delete`/`api_search`/`authorize`; REST + GraphQL; API-key/bearer/HTTP-basic/**static** OAuth2 auth. **Not supported** (→ `local_execution_unsupported`, exit 4): refreshable OAuth, `download` (binary), context-store actions (`context_store_search`), `describe`, and advanced JSONPath. Because `context_store_search` is unsupported locally, prefer `list` for reads in local mode.
+
 ## Error recovery
 
 | Error | Likely cause | Fix |
@@ -218,12 +243,26 @@ airbyte-agent connectors execute --fields data.id,data.email,meta.has_more --jso
 | `auth_error` (exit 2) | Credentials invalid or expired | Re-run `airbyte-agent login` to refresh credentials. |
 | Empty `data: []` from `context_store_search` | Index lag, or filter too narrow | Retry with `"action": "list"` (live source). If still empty, broaden the filter. |
 
+### Local-mode errors (fail-closed — never retried on the hosted API)
+
+| Error | Likely cause | Fix |
+|---|---|---|
+| `local_execution_unsupported` (exit 4) | Connector/action uses a feature local mode can't run (refreshable OAuth, `download`, context-store, `describe`, advanced JSONPath) | Re-run **without** `--execution-mode local` to execute on the hosted API. |
+| `validation_error` (exit 4) on AWS config | Invalid `--execution-mode`, incomplete `AWS_SECRET_MANAGER_*` pair, or missing region | Fix the flag/env combo: static AWS creds are all-or-nothing, and a region is required (`--aws-region` / `AWS_SECRET_MANAGER_REGION` / profile). |
+| `secret_manager_authentication_error` (exit 2) | Missing/expired cached SSO session or no AWS credentials | Ask the user to run `aws sso login --profile <name>`, then retry. Never supply AWS keys yourself. |
+| `secret_manager_access_error` (exit 2) | AWS access denied / KMS denied | The IAM role needs `secretsmanager:GetSecretValue` (and `kms:Decrypt` for a customer-managed key) on the secret ARN. Ask the user to widen the policy. |
+| `secret_not_found` (exit 3) | The referenced secret doesn't exist in Secrets Manager | Surface to the user — the connector's secret coordinate points at a secret their AWS account doesn't have. Do not guess another secret. |
+| `secret_hydration_error` (exit 1) | Binary/non-scalar secret value, bad coordinate, or provider failure | Surface to the user; the stored secret value or coordinate is malformed for local hydration. |
+| `connector_execution_error` (exit 1) | DNS/TLS/timeout/redirect/non-2xx from the connector origin | Same as a hosted request failure — inspect the sanitized message; retry only if transient. |
+
 ## Do NOT
 
 - Do NOT call `execute` without `select_fields` or `exclude_fields`. Field selection is mandatory.
 - Do NOT use `like` when `fuzzy` would do — `like` fails on word reordering and typos.
 - Do NOT guess entity, action, or param names. Run `connectors inspect`, then `skills docs`, first — docs are the source of truth for what a specific connector supports.
 - Do NOT pass credentials in the `execute` payload — credentials live on the connector and are set via `connectors create`.
+- Do NOT pass AWS keys or any connector secret when using `--execution-mode local`. There are no secret-bearing flags; AWS auth comes from the user's environment (`aws sso login --profile <name>`).
+- Do NOT retry a local-mode failure on the hosted API automatically. Local is fail-closed; only re-run hosted if the user asks.
 - Do NOT paginate beyond 3 pages — narrow the filter instead.
 - Do NOT pass relative dates ("today", "last week") — resolve to absolute ISO 8601 timestamps and report the range to the user.
 - Do NOT silently retry write failures against a different target.
