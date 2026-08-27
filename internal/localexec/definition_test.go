@@ -136,6 +136,36 @@ func TestDefinitionNoPaths(t *testing.T) {
 	assertValidationError(t, err)
 }
 
+// Real connector definitions (e.g. Stripe) place a boolean `required: true` on
+// individual property schemas, unlike the object-level `required: [names]`
+// list. The parser must tolerate the boolean form (as an empty required list)
+// rather than failing the whole definition.
+func TestDefinitionPropertyLevelBooleanRequired(t *testing.T) {
+	src := "openapi: 3.0.0\n" +
+		"paths:\n" +
+		"  /widgets:\n" +
+		"    get:\n" +
+		"      x-airbyte-entity: widget\n" +
+		"      x-airbyte-action: list\n" +
+		"      parameters:\n" +
+		"        - name: filter\n" +
+		"          in: query\n" +
+		"          schema:\n" +
+		"            type: object\n" +
+		"            properties:\n" +
+		"              enabled:\n" +
+		"                type: boolean\n" +
+		"                required: true\n"
+	def, err := ParseDefinition(src)
+	if err != nil {
+		t.Fatalf("boolean property-level required should parse: %v", err)
+	}
+	schema := def.Paths["/widgets"].Get.Parameters[0].Schema
+	if len(schema.Properties["enabled"].Required) != 0 {
+		t.Errorf("boolean required should decode to empty list, got %v", schema.Properties["enabled"].Required)
+	}
+}
+
 func TestDefinitionUnknownAction(t *testing.T) {
 	def, err := ParseDefinition(loadFixture(t, "apikey_list.yaml"))
 	if err != nil {

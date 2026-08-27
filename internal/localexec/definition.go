@@ -138,10 +138,30 @@ type Schema struct {
 	Enum       []any                `yaml:"enum"`
 	Default    any                  `yaml:"default"`
 	Properties map[string]*Schema   `yaml:"properties"`
-	Required   []string             `yaml:"required"`
+	Required   requiredNames        `yaml:"required"`
 	Items      *Schema              `yaml:"items"`
 	Nullable   bool                 `yaml:"nullable"`
 	Extensions map[string]yaml.Node `yaml:",inline"`
+}
+
+// requiredNames models an OpenAPI `required` value. At the object-schema level it
+// is a list of required property names. Some real connector definitions (e.g.
+// Stripe) also emit a boolean `required: true` on individual property schemas —
+// technically-off OpenAPI, but common — which must not fail the whole parse.
+// Any non-sequence value decodes to an empty list.
+type requiredNames []string
+
+func (r *requiredNames) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.SequenceNode {
+		*r = nil
+		return nil
+	}
+	var names []string
+	if err := node.Decode(&names); err != nil {
+		return err
+	}
+	*r = names
+	return nil
 }
 
 // Components models the components object; only security schemes are inspected.
