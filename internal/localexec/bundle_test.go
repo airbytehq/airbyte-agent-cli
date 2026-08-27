@@ -76,6 +76,29 @@ func TestBundleDecodeUnknownFieldRejected(t *testing.T) {
 	assertValidationError(t, err)
 }
 
+// The prepare endpoint returns the shared ConnectorExecuteResponse, which always
+// includes `result` and `context_store_bundle` (null on the direct/local path).
+// Both must be tolerated by the strict decoder even though local execution
+// ignores them.
+func TestBundleDecodeToleratesResultAndContextStoreBundle(t *testing.T) {
+	bundle := `"bundle": {"connector_definition_id": "x", "definition_yaml": ` + fmt.Sprintf("%q", minimalYAML) + `, "entity": "e", "action": "list"}`
+	cases := map[string]string{
+		"null":     `{"status": "success", "result": null, "context_store_bundle": null, ` + bundle + `}`,
+		"non-null": `{"status": "success", "result": {"data": []}, "context_store_bundle": {"catalog": "x"}, ` + bundle + `}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			env, err := DecodeEnvelope([]byte(raw))
+			if err != nil {
+				t.Fatalf("prepare envelope with result/context_store_bundle should decode: %v", err)
+			}
+			if env.Bundle == nil {
+				t.Fatal("bundle should be preserved")
+			}
+		})
+	}
+}
+
 func TestBundleDecodeUnknownBundleFieldRejected(t *testing.T) {
 	raw := `{"bundle": {"connector_definition_id": "x", "definition_yaml": "y", "entity": "e", "action": "list", "unexpected": 1}}`
 	_, err := DecodeEnvelope([]byte(raw))

@@ -22,12 +22,21 @@ const (
 
 // Envelope is the JSON envelope returned by the prepare endpoint. Field names
 // are the wire contract and must match exactly.
+//
+// The prepare endpoint serializes the backend's shared ConnectorExecuteResponse,
+// which also carries `result` (the hosted execution payload) and
+// `context_store_bundle` (the context-store catalog bundle). Neither is consumed
+// by local direct execution — `result` is null on the prepare path and Go local
+// execution does not support context-store actions — but they must be modelled
+// so the strict (DisallowUnknownFields) decoder accepts the real response.
 type Envelope struct {
-	Status            string             `json:"status"`
-	ConnectorMetadata json.RawMessage    `json:"connector_metadata"`
-	ExecutionMetadata *ExecutionMetadata `json:"execution_metadata"`
-	Warning           string             `json:"warning,omitempty"`
-	Bundle            *ExecuteBundle     `json:"bundle"`
+	Status             string             `json:"status"`
+	ConnectorMetadata  json.RawMessage    `json:"connector_metadata"`
+	ExecutionMetadata  *ExecutionMetadata `json:"execution_metadata"`
+	Warning            string             `json:"warning,omitempty"`
+	Bundle             *ExecuteBundle     `json:"bundle"`
+	Result             json.RawMessage    `json:"result,omitempty"`
+	ContextStoreBundle json.RawMessage    `json:"context_store_bundle,omitempty"`
 }
 
 // ExecutionMetadata carries prepare-time execution metadata. It is preserved
