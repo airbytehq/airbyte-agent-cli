@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,6 +58,11 @@ type authScheme struct {
 	httpScheme string // basic/bearer (http only)
 	keyName    string // header/query/cookie name (apiKey only)
 	ext        authExt
+	// mapping overrides the bundle-level replication_auth_key_mapping for schemes
+	// compiled from x-airbyte-auth-config (whose per-scheme mapping is authored on
+	// the scheme itself, keyed auth_key -> source_path). Nil for legacy
+	// x-airbyte-auth schemes, which use the bundle-level mapping.
+	mapping map[string]any
 }
 
 // authSpec is the compiled, hydration-independent authentication requirement of
@@ -122,7 +128,11 @@ func resolveAuthSpec(op *ResolvedOperation) (*authSpec, error) {
 // compileScheme validates and compiles a single security scheme definition.
 func compileScheme(name string, def *SecurityScheme) (authScheme, error) {
 	s := authScheme{name: name, typ: def.Type}
-	if _, err := decodeExt(def.Extensions, "x-airbyte-auth", &s.ext); err != nil {
+	if def.AuthConfig != nil {
+		// Real connectors carry x-airbyte-auth-config; derive the credential
+		// config key(s) and per-scheme mapping from it.
+		deriveAuthConfigScheme(&s, def)
+	} else if _, err := decodeExt(def.Extensions, "x-airbyte-auth", &s.ext); err != nil {
 		return authScheme{}, err
 	}
 	switch def.Type {
@@ -154,6 +164,74 @@ func compileScheme(name string, def *SecurityScheme) (authScheme, error) {
 		return authScheme{}, unsupportedError(fmt.Sprintf("security scheme type %q is not supported by local execution", def.Type))
 	}
 	return s, nil
+}
+
+// deriveAuthConfigScheme populates the credential config key(s) and per-scheme
+// mapping on s from an x-airbyte-auth-config, so the shared applyScheme placement
+// logic resolves the credential from the hydrated source config. The credential
+// field is the bare ${field} referenced by the scheme's canonical auth_mapping
+// entry (token / username+password / api_key / access_token); with no auth_mapping
+// entry it falls back to identity on that canonical name (direct-only schemes).
+func deriveAuthConfigScheme(s *authScheme, def *SecurityScheme) {
+	ac := def.AuthConfig
+	switch def.Type {
+	case schemeAPIKey:
+		s.ext.ConfigKey = authConfigCredKey(ac, "api_key")
+	case schemeHTTP:
+		if def.Scheme == "basic" {
+			s.ext.UsernameKey = authConfigCredKey(ac, "username")
+			s.ext.PasswordKey = authConfigCredKey(ac, "password")
+		} else {
+			s.ext.ConfigKey = authConfigCredKey(ac, "token")
+		}
+	case schemeOAuth2:
+		s.ext.ConfigKey = authConfigCredKey(ac, "access_token")
+	}
+	s.mapping = invertAuthMapping(ac.ReplicationAuthKeyMapping)
+}
+
+// authConfigCredKey returns the source-config field that supplies a canonical
+// auth parameter. When auth_mapping names the parameter it must be a bare
+// ${field} reference (matching the backend, which supports only bare references);
+// a non-bare template yields "" (a soft miss). With no auth_mapping entry the
+// canonical name is used directly (direct-only identity mapping).
+func authConfigCredKey(ac *AuthConfig, canonical string) string {
+	if tmpl, ok := ac.AuthMapping[canonical]; ok {
+		if v, ok := bareVar(tmpl); ok {
+			return v
+		}
+		return ""
+	}
+	return canonical
+}
+
+// bareVar returns the field name inside a bare ${field} reference. Constants and
+// concatenations (e.g. "Bearer ${x}") are not bare references and return false.
+func bareVar(t string) (string, bool) {
+	if len(t) > 3 && strings.HasPrefix(t, "${") && strings.HasSuffix(t, "}") {
+		inner := t[2 : len(t)-1]
+		if inner != "" && !strings.ContainsAny(inner, "${}") {
+			return inner, true
+		}
+	}
+	return "", false
+}
+
+// invertAuthMapping inverts an x-airbyte-auth-config replication_auth_key_mapping
+// (source_path -> auth_key) into the auth_key -> source_path form authValue's
+// mapping indirection expects. Returns nil for an empty mapping so identity
+// resolution applies.
+func invertAuthMapping(repl map[string]string) map[string]any {
+	if len(repl) == 0 {
+		return nil
+	}
+	inv := make(map[string]any, len(repl))
+	for sourcePath, authKey := range repl {
+		if authKey != "" {
+			inv[authKey] = sourcePath
+		}
+	}
+	return inv
 }
 
 // applyAuth returns a COPY of plan with the first fully satisfiable security
@@ -216,6 +294,11 @@ func applyAlternative(schemes []authScheme, cp *RequestPlan, sourceConfig, mappi
 
 // applyScheme resolves and applies a single scheme's credential to cp.
 func applyScheme(s authScheme, cp *RequestPlan, sourceConfig, mapping map[string]any) (bool, error) {
+	// x-airbyte-auth-config schemes carry their own auth_key -> source_path
+	// mapping; legacy x-airbyte-auth schemes use the bundle-level mapping.
+	if s.mapping != nil {
+		mapping = s.mapping
+	}
 	switch s.typ {
 	case schemeAPIKey:
 		val, ok, err := authValue(s.name, s.ext.ConfigKey, sourceConfig, mapping)

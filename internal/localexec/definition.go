@@ -180,7 +180,25 @@ type SecurityScheme struct {
 	BearerFormat string               `yaml:"bearerFormat"`
 	Flows        *OAuthFlows          `yaml:"flows"`
 	OAuthRefresh bool                 `yaml:"x-airbyte-oauth-refresh"`
+	AuthConfig   *AuthConfig          `yaml:"x-airbyte-auth-config"`
 	Extensions   map[string]yaml.Node `yaml:",inline"`
+}
+
+// AuthConfig models the x-airbyte-auth-config extension attached to a security
+// scheme. It is the auth contract every real Airbyte connector definition uses
+// (the older top-level x-airbyte-auth extension is not emitted by any connector).
+//
+// AuthMapping maps a connector auth parameter (e.g. "token", "username",
+// "api_key") to a bare `${field}` reference. ReplicationAuthKeyMapping maps a
+// source-config path to the auth field it supplies (source_path -> auth_key).
+// Required and Properties drive direct-only identity mapping when no replication
+// mapping is present. Values are resolved from the hydrated source config in
+// auth.go; nothing here is a secret.
+type AuthConfig struct {
+	Required                  requiredNames      `yaml:"required"`
+	Properties                map[string]*Schema `yaml:"properties"`
+	AuthMapping               map[string]string  `yaml:"auth_mapping"`
+	ReplicationAuthKeyMapping map[string]string  `yaml:"replication_auth_key_mapping"`
 }
 
 // OAuthFlows models the OAuth2 flows object.
