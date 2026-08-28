@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/airbytehq/airbyte-agent-cli/internal/auth"
+	"github.com/airbytehq/airbyte-agent-cli/internal/config"
 )
 
 func newTestTokenServer(t *testing.T) *httptest.Server {
@@ -362,6 +364,55 @@ func TestAPIError_JSONSerializable(t *testing.T) {
 	}
 }
 
+func TestLocalErrorConstructors_ExitCodesAndJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      *APIError
+		wantType string
+		wantExit int
+	}{
+		{"validation", NewLocalValidationError("bad input", "fix it"), TypeValidation, ExitValidation},
+		{"unsupported", NewLocalExecutionUnsupportedError("nope", ""), TypeLocalExecutionUnsupported, ExitValidation},
+		{"sm-auth", NewSecretManagerAuthenticationError("expired", "aws sso login --profile p"), TypeSecretManagerAuthentication, ExitAuth},
+		{"sm-access", NewSecretManagerAccessError("denied", ""), TypeSecretManagerAccess, ExitAuth},
+		{"not-found", NewSecretNotFoundError("missing", ""), TypeSecretNotFound, ExitNotFound},
+		{"hydration", NewSecretHydrationError("bad payload", ""), TypeSecretHydration, ExitGeneral},
+		{"connector", NewConnectorExecutionError("transport failed", ""), TypeConnectorExecutionError, ExitGeneral},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.err.Type != tt.wantType {
+				t.Errorf("Type = %q, want %q", tt.err.Type, tt.wantType)
+			}
+			if tt.err.Retryable {
+				t.Error("local errors must not be retryable")
+			}
+			if got := tt.err.ExitCode(); got != tt.wantExit {
+				t.Errorf("ExitCode = %d, want %d", got, tt.wantExit)
+			}
+
+			data, err := json.Marshal(tt.err)
+			if err != nil {
+				t.Fatalf("marshaling: %v", err)
+			}
+			var parsed APIError
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("unmarshaling: %v", err)
+			}
+			if parsed.Type != tt.wantType {
+				t.Errorf("round-tripped Type = %q, want %q", parsed.Type, tt.wantType)
+			}
+			if parsed.Message != tt.err.Message {
+				t.Errorf("round-tripped Message = %q, want %q", parsed.Message, tt.err.Message)
+			}
+			if parsed.Hint != tt.err.Hint {
+				t.Errorf("round-tripped Hint = %q, want %q", parsed.Hint, tt.err.Hint)
+			}
+		})
+	}
+}
+
 func TestClient_RejectsExternalPaginationURL(t *testing.T) {
 	creds := &auth.Credentials{ClientID: "id", ClientSecret: "secret"}
 	tm := auth.NewTokenManager("https://api.example.com", "", creds)
@@ -411,6 +462,76 @@ func TestClient_DebugFuncIsEvaluatedAtRequestTime(t *testing.T) {
 	debug = true
 	if !c.isDebug() {
 		t.Fatal("debug should reflect updated flag state")
+	}
+}
+
+func TestClient_ExecutionConfigDefaultsToHosted(t *testing.T) {
+	// No resolver registered: defaults to hosted with no error.
+	c := New("https://api.example.com", "", "test", nil)
+	cfg, err := c.ExecutionConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Mode != config.ModeHosted {
+		t.Errorf("Mode = %q, want hosted (default)", cfg.Mode)
+	}
+
+	// Nil receiver is safe and also hosted.
+	var nilClient *Client
+	nilCfg, err := nilClient.ExecutionConfig()
+	if err != nil {
+		t.Fatalf("unexpected nil-client error: %v", err)
+	}
+	if nilCfg.Mode != config.ModeHosted {
+		t.Errorf("nil-client Mode = %q, want hosted", nilCfg.Mode)
+	}
+}
+
+func TestClient_ExecutionConfigFuncIsEvaluatedAtRequestTime(t *testing.T) {
+	mode := config.ModeHosted
+	c := New("https://api.example.com", "", "test", nil,
+		WithExecutionConfigFunc(func() (config.ExecutionConfig, error) {
+			return config.ExecutionConfig{Mode: mode, AWSProfile: "p"}, nil
+		}),
+	)
+
+	cfg, err := c.ExecutionConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Mode != config.ModeHosted {
+		t.Fatalf("Mode = %q, want hosted before flag change", cfg.Mode)
+	}
+
+	// Simulate a flag parsed after client construction.
+	mode = config.ModeLocal
+	cfg, err = c.ExecutionConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Mode != config.ModeLocal {
+		t.Errorf("Mode = %q, want local after deferred read", cfg.Mode)
+	}
+	if cfg.AWSProfile != "p" {
+		t.Errorf("AWSProfile = %q, want p", cfg.AWSProfile)
+	}
+}
+
+func TestClient_ExecutionConfigFuncPropagatesError(t *testing.T) {
+	wantErr := &APIError{Type: "validation_error", Message: "bad mode", StatusCode: 400}
+	c := New("https://api.example.com", "", "test", nil,
+		WithExecutionConfigFunc(func() (config.ExecutionConfig, error) {
+			return config.ExecutionConfig{}, wantErr
+		}),
+	)
+
+	_, err := c.ExecutionConfig()
+	if err == nil {
+		t.Fatal("expected error to be propagated, got nil")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T", err)
 	}
 }
 

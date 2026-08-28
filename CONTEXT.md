@@ -15,6 +15,9 @@ This document tells AI agents how to use the `airbyte-agent` CLI. For developmen
 > [!IMPORTANT]
 > **Discover before executing**: Always run `connectors inspect`, then `skills docs` with the returned `docs_skill_id`, before the first `execute` on any connector. Entity and action names vary by connector type and are not guessable.
 
+> [!IMPORTANT]
+> **Never handle secret material.** You MAY select an execution mode or AWS profile (`--execution-mode`, `--aws-profile`, `--aws-region`). You MUST NEVER request, accept, or pass AWS secret-key material — or any connector secret — through JSON, flags, prompts, or logs. Connector credentials are entered only through the browser flow (`connectors create` / `connectors update`); AWS access for local mode comes from the user's own environment (`aws sso login --profile <name>` or the AWS SDK chain), never from you.
+
 ## Core Syntax
 
 ```bash
@@ -38,6 +41,8 @@ airbyte-agent schema <resource> <operation>       # Show parameter schema (CLI +
 | `--output, -o` | Write output to file instead of stdout | -- |
 | `--verbose, -v` | Enable debug logging | `false` |
 | `--fields` | Filter response to listed fields (comma-separated dotted paths, e.g. `data.id,data.name`). Client-side; not applied to errors. | -- |
+| `--execution-mode` | `hosted` (default) or `local`. Global flag. Selects where `connectors execute` runs the connector request. See "Local execution" below. | `hosted` |
+| `--aws-profile` / `--aws-region` | Local mode only: which AWS profile/region to use for Secrets Manager access. Global flags. | -- |
 
 ## Usage Patterns
 
@@ -125,6 +130,26 @@ airbyte-agent connectors execute --json '{
   "exclude_fields": ["body_html", "attachments"]
 }'
 ```
+
+### 3b. Local Execution (opt-in)
+
+By default `connectors execute` runs **hosted** (Airbyte performs the request). When the user asks for local execution, the CLI runs the connector request itself and reads the connector's secrets from the user's own AWS Secrets Manager. The response shape is the same as hosted; you do not need to change how you read the result. See the `connectors-execute` skill reference for the full contract.
+
+```bash
+# Enable local mode (preferred: env var). AWS auth comes from the user's environment.
+AIRBYTE_EXECUTION_MODE=local \
+  airbyte-agent connectors execute --json '{"workspace":"default","name":"my-source","entity":"users","action":"list","select_fields":["id","name"]}'
+
+# Or with an explicit AWS profile the user has already logged into (aws sso login --profile production)
+airbyte-agent --execution-mode local --aws-profile production --aws-region us-east-1 \
+  connectors execute --json '{"workspace":"default","name":"my-source","entity":"users","action":"list","select_fields":["id","name"]}'
+```
+
+Constraints to remember:
+
+- **Fail-closed:** local failures never fall back to hosted. On `local_execution_unsupported` (exit 4) — e.g. refreshable OAuth or a binary `download` — re-run without `--execution-mode local`.
+- **On `secret_manager_authentication_error` (exit 2):** the AWS SSO session is missing/expired. Ask the user to run `aws sso login --profile <name>`; never attempt to supply AWS keys yourself.
+- **Do not** put AWS keys or connector secrets in the JSON payload, flags, or anywhere else. There are no secret-bearing flags by design.
 
 ### 4. Creating a New Connector
 

@@ -57,6 +57,81 @@ func NewNotFoundError(message, hint string) *APIError {
 	}
 }
 
+// Stable error type strings for locally-originated failures (execution-config
+// resolution, local connector execution, secret-manager access, and connector
+// transport). These mirror the type contract used by internal/config,
+// internal/secrets, and internal/localexec so the CLI surfaces a single,
+// consistent {type, message, status_code, retryable, hint} shape regardless of
+// where the failure originated. The StatusCode carried by each constructor is
+// chosen solely so APIError.ExitCode() yields the documented process exit code
+// — these errors never traverse the network.
+const (
+	TypeValidation                  = "validation_error"
+	TypeLocalExecutionUnsupported   = "local_execution_unsupported"
+	TypeSecretManagerAuthentication = "secret_manager_authentication_error"
+	TypeSecretManagerAccess         = "secret_manager_access_error"
+	TypeSecretNotFound              = "secret_not_found"
+	TypeSecretHydration             = "secret_hydration_error"
+	TypeConnectorExecutionError     = "connector_execution_error"
+)
+
+// newLocalError builds a non-retryable *APIError carrying a stable local type,
+// a redaction-safe message, an optional hint, and a StatusCode chosen so
+// ExitCode() maps to the intended process exit code. The message/hint MUST
+// already be redaction-safe: no secret coordinates, secret IDs, credentials,
+// auth headers, or request/response bodies.
+func newLocalError(errType, message, hint string, statusCode int) *APIError {
+	return &APIError{
+		Type:       errType,
+		Message:    message,
+		StatusCode: statusCode,
+		Retryable:  false,
+		Hint:       hint,
+	}
+}
+
+// NewLocalValidationError reports invalid runtime configuration or a malformed
+// local-execution bundle. Exit code 4.
+func NewLocalValidationError(message, hint string) *APIError {
+	return newLocalError(TypeValidation, message, hint, 400)
+}
+
+// NewLocalExecutionUnsupportedError reports a bundle/definition that names a
+// capability the local executor does not implement. Exit code 4.
+func NewLocalExecutionUnsupportedError(message, hint string) *APIError {
+	return newLocalError(TypeLocalExecutionUnsupported, message, hint, 400)
+}
+
+// NewSecretManagerAuthenticationError reports a missing/expired secret-manager
+// credential (e.g. an expired SSO session). Exit code 2.
+func NewSecretManagerAuthenticationError(message, hint string) *APIError {
+	return newLocalError(TypeSecretManagerAuthentication, message, hint, 401)
+}
+
+// NewSecretManagerAccessError reports an access-denied response from the secret
+// manager. Exit code 2.
+func NewSecretManagerAccessError(message, hint string) *APIError {
+	return newLocalError(TypeSecretManagerAccess, message, hint, 403)
+}
+
+// NewSecretNotFoundError reports a secret that the secret manager could not
+// find. The secret ID is never echoed. Exit code 3.
+func NewSecretNotFoundError(message, hint string) *APIError {
+	return newLocalError(TypeSecretNotFound, message, hint, 404)
+}
+
+// NewSecretHydrationError reports a generic secret hydration failure (e.g. a
+// non-scalar payload or a provider service error). Exit code 1.
+func NewSecretHydrationError(message, hint string) *APIError {
+	return newLocalError(TypeSecretHydration, message, hint, 500)
+}
+
+// NewConnectorExecutionError reports a connector-origin transport or response
+// failure during local execution. Exit code 1.
+func NewConnectorExecutionError(message, hint string) *APIError {
+	return newLocalError(TypeConnectorExecutionError, message, hint, 500)
+}
+
 func newAPIError(statusCode int, message string, body []byte) *APIError {
 	typ := errorType(statusCode)
 	e := &APIError{

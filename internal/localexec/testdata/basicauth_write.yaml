@@ -1,0 +1,90 @@
+openapi: 3.0.0
+info:
+  title: Synthetic Basic-Auth REST Connector
+  version: "1.0.0"
+servers:
+  - url: https://api.example.test
+components:
+  securitySchemes:
+    basic:
+      type: http
+      scheme: basic
+      x-airbyte-auth:
+        username_key: credentials.username
+        password_key: credentials.password
+security:
+  - basic: []
+paths:
+  /accounts:
+    post:
+      operationId: createAccount
+      x-airbyte-entity: account
+      x-airbyte-action: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                plan:
+                  type: string
+                  default: free
+                  enum:
+                    - free
+                    - pro
+                seats:
+                  type: integer
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+  /accounts/{account_id}:
+    patch:
+      operationId: updateAccount
+      x-airbyte-entity: account
+      x-airbyte-action: update
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                plan:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      operationId: deleteAccount
+      x-airbyte-entity: account
+      x-airbyte-action: delete
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content

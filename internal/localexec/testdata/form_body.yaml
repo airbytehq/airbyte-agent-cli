@@ -1,0 +1,39 @@
+openapi: 3.0.0
+info:
+  title: Synthetic Form-Body Connector
+  version: "1.0.0"
+servers:
+  - url: https://auth.example.test
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+paths:
+  /token:
+    post:
+      operationId: authorize
+      x-airbyte-entity: session
+      x-airbyte-action: authorize
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+              properties:
+                grant_type:
+                  type: string
+                  default: client_credentials
+                scope:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object

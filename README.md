@@ -129,6 +129,17 @@ Env vars take precedence over the file when all three are present, so they're us
 | `AIRBYTE_TELEMETRY_MODE` | Set to `disabled` to turn off telemetry. Any other value (or unset) falls through to `telemetry_enabled` in the settings file. | (settings file) |
 | `AIRBYTE_VERSION_CHECK` | Set to `disabled` to suppress the once-per-day "new version available" nudge. Any other value (or unset) falls through to `version_check_enabled` in the settings file. | (settings file) |
 
+The variables below only affect the opt-in [local connector execution](#local-connector-execution) path. They never carry connector credentials — see the security note in that section.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `AIRBYTE_EXECUTION_MODE` | `hosted` or `local`. Overridden by `--execution-mode`. | `hosted` |
+| `SECRETS_CONFIGURED_FROM_ENVIRONMENT` | SDK-compatibility switch. When truthy (`1`/`t`/`true`/`y`/`yes`/`on`) it selects local mode — but **only** when neither `--execution-mode` nor `AIRBYTE_EXECUTION_MODE` is set. Prefer `AIRBYTE_EXECUTION_MODE=local` in new setups. | unset |
+| `AWS_SECRET_MANAGER_REGION` | Region for Secrets Manager. Overridden by `--aws-region`; falls back to the AWS SDK region chain (`AWS_REGION`/`AWS_DEFAULT_REGION` + profile config) when unset. | -- |
+| `AWS_SECRET_MANAGER_ACCESS_KEY_ID` | Dedicated static access key for Secrets Manager. Honored **only when `--aws-profile` is not set**. All-or-nothing with the secret key below. | -- |
+| `AWS_SECRET_MANAGER_SECRET_ACCESS_KEY` | Dedicated static secret key. Must be set together with `AWS_SECRET_MANAGER_ACCESS_KEY_ID` (one without the other is a `validation_error`). | -- |
+| `AWS_SECRET_MANAGER_SESSION_TOKEN` | Optional session token for the dedicated static pair above. A session token without the pair is a `validation_error`. | -- |
+
 ### Settings file
 
 `~/.airbyte-agent/settings.json`:
@@ -203,6 +214,9 @@ Use `@filename` to load JSON from a file: `--json @params.json`. `--json` is the
 | `--output, -o` | Write output to a file instead of stdout | -- |
 | `--verbose, -v` | Enable debug logging | `false` |
 | `--fields` | Filter the response to only the listed fields. Comma-separated, dotted paths (e.g. `data.id,data.name`). Applied client-side, after the API responds. Errors are not filtered. | -- |
+| `--execution-mode` | Where `connectors execute` runs the connector request: `hosted` (Airbyte runs it) or `local` (this CLI runs it, hydrating secrets from your AWS Secrets Manager). See [Local connector execution](#local-connector-execution). | `hosted` |
+| `--aws-profile` | Local mode only: shared-config profile used for Secrets Manager access. Authoritative when set — consumes a cached `aws sso login` session; the CLI never opens a browser itself. | -- |
+| `--aws-region` | Local mode only: AWS region for Secrets Manager. | -- |
 
 ### Filtering output with `--fields`
 
@@ -269,6 +283,115 @@ airbyte-agent connectors execute --json @params.json
 ```
 
 `connectors describe` remains available for legacy clients that consume the old merged schema output, but new workflows should use `connectors inspect` and `skills docs`.
+
+## Local connector execution
+
+By default `connectors execute` runs **hosted**: Airbyte performs the connector HTTP request and returns the result. Local execution is an **opt-in** alternative in which the CLI process itself performs the connector request, so the connector's secrets are read from a **customer-owned AWS Secrets Manager** and are never sent to or seen by Airbyte's hosted API.
+
+In local mode the CLI asks the API for an unhydrated "execute bundle" (same request you'd send to hosted `execute`, including `intent`), resolves `secret_coordinate::` placeholders from AWS Secrets Manager **in memory**, and issues the connector request over a hardened HTTPS transport. The response envelope is unchanged apart from the fields noted under [Response](#response).
+
+> [!IMPORTANT]
+> **AWS auth here is for reading your Secrets Manager — it is not connector credential entry.** Connector credentials are still entered only through the browser flow (`connectors create` / `connectors update`). **Never** put AWS keys or connector secrets in command JSON, flags, `settings.json`, prompts, chat, logs, or telemetry. There are deliberately no `--aws-access-key-id` / `--aws-secret-access-key` / `--secret-value` flags. Hydrated secrets live only in memory for the duration of one invocation and are never persisted or cached.
+
+### Enabling local mode
+
+```bash
+# Hosted (default) — nothing to set
+airbyte-agent connectors execute --json '{ "name": "hubspot", "entity": "contacts", "action": "read", "select_fields": ["id","email"] }'
+
+# Local via env var (preferred)
+AIRBYTE_EXECUTION_MODE=local \
+  airbyte-agent connectors execute --json '{ "name": "hubspot", "entity": "contacts", "action": "read", "select_fields": ["id","email"] }'
+
+# Local via flag, with an explicit AWS profile + region
+airbyte-agent --execution-mode local --aws-profile production --aws-region us-east-1 \
+  connectors execute --json '{ "name": "hubspot", "entity": "contacts", "action": "read", "select_fields": ["id","email"] }'
+```
+
+`--execution-mode`, `--aws-profile`, and `--aws-region` are **global** flags (they precede the resource/operation) and compose with `--json`. An invalid `--execution-mode` value is now a `validation_error` (exit 4) — it does **not** silently fall back to hosted.
+
+**Execution-mode precedence:** `--execution-mode` > `AIRBYTE_EXECUTION_MODE` > `SECRETS_CONFIGURED_FROM_ENVIRONMENT` (only when both of the former are unset) > `hosted`.
+
+### AWS credentials for Secrets Manager
+
+AWS credentials are resolved in this order:
+
+1. **`--aws-profile <name>`** (authoritative when set). This uses a *cached* SSO/credential session — run `aws sso login --profile <name>` first. The CLI does **not** open a browser or run `aws sso login` for you. When a profile is set, the dedicated `AWS_SECRET_MANAGER_*` credential env vars are ignored.
+2. **Dedicated static env pair** (only when no `--aws-profile`): `AWS_SECRET_MANAGER_ACCESS_KEY_ID` + `AWS_SECRET_MANAGER_SECRET_ACCESS_KEY` (all-or-nothing), plus optional `AWS_SECRET_MANAGER_SESSION_TOKEN` and `AWS_SECRET_MANAGER_REGION`.
+3. **The normal AWS SDK v2 provider chain**, used unchanged when neither of the above applies: standard env vars, `AWS_PROFILE`, web-identity, ECS/EC2 instance roles, `credential_process`, and any existing SSO cache.
+
+**Region precedence:** `--aws-region` > `AWS_SECRET_MANAGER_REGION` > the AWS SDK region chain (`AWS_REGION`/`AWS_DEFAULT_REGION` + shared profile config). A missing required region is a `validation_error` (exit 4).
+
+Typical SSO setup:
+
+```bash
+aws sso login --profile production
+airbyte-agent --execution-mode local --aws-profile production --aws-region us-east-1 \
+  connectors execute --json '{ ... }'
+```
+
+### Least-privilege IAM policy
+
+Grant only `secretsmanager:GetSecretValue` on the specific secret ARNs your connectors use. Add `kms:Decrypt` **only** if those secrets are encrypted with a customer-managed KMS key:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadConnectorSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:my-connector-*"
+    },
+    {
+      "Sid": "DecryptWithCustomerKey",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:aws:kms:us-east-1:111122223333:key/00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
+```
+
+### Response
+
+Local mode returns the standard `connectors execute` envelope with one change: the internal `bundle` is removed and `result` is `{ "records": [...], "record_count": N, "truncated": <bool>, "metadata": {...}? }`. `status`, `connector_metadata`, and an optional `warning` are preserved from the prepare step. In `execution_metadata`, `connector_instance_id` is preserved but `execution_time_ms` is replaced with the local end-to-end time.
+
+### Supported surface
+
+Supported in local mode: OpenAPI-3 connector definitions; the `list`/`get`/`create`/`update`/`delete`/`api_search`/`authorize` actions; REST and GraphQL; path/query/header/cookie/JSON-body/form-urlencoded/multipart parameter placement; API-key (header/query/cookie), bearer, HTTP basic, and **static** OAuth2 access-token auth; and a restricted JSONPath subset (`$`, dotted keys, bracket-quoted keys, numeric indexes, `[*]`).
+
+Not supported (rejected up front — before any AWS or network call — where statically detectable, with a stable `local_execution_unsupported` error): refreshable OAuth; `download` (binary responses — output is JSON only); context-store actions; `describe`; unknown `x-airbyte-*` extensions; and advanced JSONPath (recursive descent, filters, slices, unions, scripts). Only `GET`/`HEAD` requests are retried.
+
+### Fail-closed behavior and errors
+
+Local failures **never fall back to hosted** — if local execution can't proceed, the command errors. Errors use the standard JSON-on-stderr shape (`{type, message, status_code, retryable, hint?}`):
+
+| `type` | Exit | When |
+| --- | ---: | --- |
+| `validation_error` | 4 | Invalid execution mode, incomplete dedicated AWS env pair, or a missing required region. |
+| `local_execution_unsupported` | 4 | Refreshable OAuth, `download`/context-store/`describe`, or an unsupported definition extension / JSONPath. |
+| `secret_manager_authentication_error` | 2 | Missing/expired cached SSO token or no AWS credentials. Includes an `aws sso login --profile <name>` hint when a profile was explicitly selected. |
+| `secret_manager_access_error` | 2 | AWS access denied or KMS denied. |
+| `secret_not_found` | 3 | `GetSecretValue` reported the secret does not exist (the secret ID is never echoed). |
+| `secret_hydration_error` | 1 | `SecretBinary`, non-scalar JSON `SecretString`, invalid/empty coordinate, or a provider service failure. |
+| `connector_execution_error` | 1 | DNS/TLS/timeout/redirect/non-2xx/response-transform failure (sanitized). |
+
+### Troubleshooting
+
+- **`secret_manager_authentication_error` (exit 2).** Your SSO session is missing or expired. Run `aws sso login --profile <name>` and retry. If you're not using a profile, confirm the AWS SDK chain (or the dedicated `AWS_SECRET_MANAGER_*` pair) resolves credentials.
+- **`validation_error` on AWS env vars (exit 4).** The dedicated pair is all-or-nothing — set both `AWS_SECRET_MANAGER_ACCESS_KEY_ID` and `AWS_SECRET_MANAGER_SECRET_ACCESS_KEY` (a session token requires the pair too), or select `--aws-profile` instead.
+- **`validation_error` for a missing region (exit 4).** Pass `--aws-region`, set `AWS_SECRET_MANAGER_REGION`, or configure a region in your profile.
+- **`secret_manager_access_error` (exit 2).** Widen the IAM policy above — `secretsmanager:GetSecretValue` on the secret ARN, plus `kms:Decrypt` if a customer-managed key is used.
+- **`local_execution_unsupported` (exit 4).** The connector uses a feature local mode can't run (e.g. refreshable OAuth or a binary `download`). Re-run without `--execution-mode local` to execute on the hosted API.
+
+### Deferred follow-ups
+
+These are planned but **not** implemented — do not rely on hidden fallbacks:
+
+- **GCP Secret Manager** as an additional secret provider (AWS is the only provider today).
+- An explicit `aws sso login`-style login command in the CLI (today you must run `aws sso login --profile <name>` yourself before local mode).
 
 ## Develop
 

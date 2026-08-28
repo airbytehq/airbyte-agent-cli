@@ -8,9 +8,12 @@ import (
 )
 
 var (
-	output  string
-	verbose bool
-	fields  []string
+	output        string
+	verbose       bool
+	fields        []string
+	executionMode string
+	awsProfile    string
+	awsRegion     string
 )
 
 var rootCmd = &cobra.Command{
@@ -28,6 +31,13 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "", "Output file path")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().StringSliceVar(&fields, "fields", nil, "Filter response to only the listed fields (comma-separated, dotted paths, e.g. 'data.id,data.name')")
+
+	// Runtime provider controls. These are persistent ROOT flags (not
+	// per-operation params) so they compose with --json and other output
+	// flags. They carry no secret material.
+	rootCmd.PersistentFlags().StringVar(&executionMode, "execution-mode", "", "Connector execution mode: hosted (default) or local")
+	rootCmd.PersistentFlags().StringVar(&awsProfile, "aws-profile", "", "AWS shared-config profile for secret hydration (local mode); authoritative when set")
+	rootCmd.PersistentFlags().StringVar(&awsRegion, "aws-region", "", "AWS region for secret hydration (local mode)")
 }
 
 func Execute() error {
@@ -44,6 +54,22 @@ func GetVerbose() bool {
 
 func GetOutput() string {
 	return output
+}
+
+// GetExecutionMode returns the raw --execution-mode flag value ("" if unset).
+// Resolution of precedence and validation happens in config.ResolveExecutionConfig.
+func GetExecutionMode() string {
+	return executionMode
+}
+
+// GetAWSProfile returns the raw --aws-profile flag value ("" if unset).
+func GetAWSProfile() string {
+	return awsProfile
+}
+
+// GetAWSRegion returns the raw --aws-region flag value ("" if unset).
+func GetAWSRegion() string {
+	return awsRegion
 }
 
 type flags struct{}

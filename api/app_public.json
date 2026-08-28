@@ -4580,17 +4580,38 @@
           },
           "execution_metadata": {
             "$ref": "#/components/schemas/ExecutionMetadata"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
           }
         },
         "type": "object",
         "required": [
           "status",
-          "result",
           "connector_metadata",
           "execution_metadata"
         ],
         "title": "ConnectorExecuteResponse",
-        "description": "Standardized response envelope for connector execution."
+        "description": "Standardized response envelope for connector execution. The optional `bundle` and `warning` fields, and the non-required `result` field, support the opt-in local execution flow: the prepare response carries an opaque `bundle` (executed locally) and omits `result`, while a hosted response carries `result` and omits `bundle`."
       },
       "ConnectorInspectConfiguredCacheEntity": {
         "properties": {

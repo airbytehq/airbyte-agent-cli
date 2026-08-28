@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: Synthetic Bearer GraphQL Connector
+  version: "1.0.0"
+servers:
+  - url: https://graph.example.test
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      x-airbyte-auth:
+        config_key: credentials.access_token
+security:
+  - bearer: []
+paths:
+  /graphql:
+    post:
+      operationId: searchIssues
+      x-airbyte-entity: issue
+      x-airbyte-action: api_search
+      x-airbyte-body-type: graphql
+      x-airbyte-graphql-query: "query Search($term: String!) { search(term: $term) { id title } }"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+      x-airbyte-record-selector: "$.data.search[*]"

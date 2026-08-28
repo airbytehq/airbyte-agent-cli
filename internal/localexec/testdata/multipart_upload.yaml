@@ -1,0 +1,41 @@
+openapi: 3.0.0
+info:
+  title: Synthetic Multipart-Upload Connector
+  version: "1.0.0"
+servers:
+  - url: https://files.example.test
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+paths:
+  /uploads:
+    post:
+      operationId: createUpload
+      x-airbyte-entity: upload
+      x-airbyte-action: create
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - filename
+              properties:
+                filename:
+                  type: string
+                content_type:
+                  type: string
+                  default: text/plain
+                description:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object

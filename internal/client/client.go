@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/airbytehq/airbyte-agent-cli/internal/auth"
+	"github.com/airbytehq/airbyte-agent-cli/internal/config"
 )
 
 const (
@@ -34,6 +35,8 @@ type Client struct {
 	httpClient       *http.Client
 	debug            bool
 	debugFunc        func() bool
+
+	executionConfigFunc func() (config.ExecutionConfig, error)
 }
 
 type Option func(*Client)
@@ -48,6 +51,31 @@ func WithDebugFunc(debugFunc func() bool) Option {
 	return func(c *Client) {
 		c.debugFunc = debugFunc
 	}
+}
+
+// WithExecutionConfigFunc registers a deferred resolver for the runtime
+// execution configuration. Following the WithDebugFunc pattern, the function is
+// called lazily (at request time), NOT at client construction, so it observes
+// the values Cobra parsed from argv. The resolver applies precedence and
+// validation and MAY return an error (e.g. an invalid --execution-mode); the
+// error is surfaced to the caller so it can be mapped to a validation exit
+// code rather than being silently swallowed into a hosted fallback.
+func WithExecutionConfigFunc(fn func() (config.ExecutionConfig, error)) Option {
+	return func(c *Client) {
+		c.executionConfigFunc = fn
+	}
+}
+
+// ExecutionConfig returns the resolved runtime execution configuration,
+// reading it lazily via the registered resolver. It is nil-safe and defaults
+// to hosted mode (with a nil error) when no resolver is registered (or the
+// receiver is nil). A non-nil error from the resolver is propagated unchanged
+// so callers can surface invalid runtime configuration as a validation error.
+func (c *Client) ExecutionConfig() (config.ExecutionConfig, error) {
+	if c == nil || c.executionConfigFunc == nil {
+		return config.ExecutionConfig{Mode: config.ModeHosted}, nil
+	}
+	return c.executionConfigFunc()
 }
 
 // WithDefaultWorkspace sets the workspace name used as a fallback when a

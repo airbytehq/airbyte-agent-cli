@@ -1,0 +1,64 @@
+openapi: 3.0.0
+info:
+  title: Synthetic API-Key REST Connector
+  version: "1.0.0"
+servers:
+  - url: https://api.example.test/{version}
+    variables:
+      version:
+        default: v1
+        enum:
+          - v1
+          - v2
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      x-airbyte-auth:
+        config_key: credentials.api_key
+security:
+  - apiKey: []
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      x-airbyte-entity: widget
+      x-airbyte-action: list
+      parameters:
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - archived
+        - name: tags
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: filter
+          in: query
+          required: false
+          style: deepObject
+          schema:
+            type: object
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+      x-airbyte-record-selector: "$.data[*]"
