@@ -8,24 +8,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// allowedInlineExtensions is the set of x-airbyte-* extension keys that this
-// phase recognizes but does not model with an explicit struct field. They are
-// carried through untouched for later phases (auth mapping, config
-// normalization/injection, record extraction/filtering/transformation, response
-// error checks, retry config). Any x-airbyte-* key that is neither an explicit
-// struct field nor in this set is a statically-detectable unsupported feature.
-var allowedInlineExtensions = map[string]bool{
-	"x-airbyte-auth":                 true,
-	"x-airbyte-config-normalization": true,
-	"x-airbyte-config-injection":     true,
-	"x-airbyte-scope":                true,
-	"x-airbyte-nullable":             true,
-	"x-airbyte-record-selector":      true,
-	"x-airbyte-record-meta":          true,
-	"x-airbyte-record-filter":        true,
-	"x-airbyte-record-transform":     true,
-	"x-airbyte-error-check":          true,
-	"x-airbyte-retry":                true,
+// unsupportedInlineExtensions is the small deny-list of x-airbyte-* extension
+// keys whose runtime semantics local execution cannot honor, so a connector
+// that declares one must fail fast rather than execute incorrectly. Currently
+// these are the token-refresh mechanisms: a connector that refreshes or
+// re-extracts tokens at runtime cannot run in a single stateless local
+// invocation (refreshable OAuth is also caught structurally by
+// rejectRefreshableOAuth via flow refreshUrl / x-airbyte-oauth-refresh).
+//
+// Every other x-airbyte-* extension is accepted. Real connector definitions
+// carry dozens of them (entity/action metadata, ai-hints, record extractors,
+// pagination hints, config normalization/injection, retry/error-check, …); this
+// phase either models the ones it needs or carries the rest untouched — the same
+// posture the executor already takes for record-selector/filter/transform. An
+// allow-list of "known" keys blocked every real connector, so acceptance is the
+// default and only genuinely-unrunnable semantics are rejected.
+var unsupportedInlineExtensions = map[string]bool{
+	"x-airbyte-token-refresh": true,
+	"x-airbyte-token-extract": true,
 }
 
 // supportedActions is the closed set of actions this local executor compiles.
@@ -297,8 +297,9 @@ func (d *Definition) rejectUnknownExtensions() error {
 }
 
 // rejectUnknownInline returns an unsupported error naming the first x-airbyte-*
-// key that is not allow-listed. Non-airbyte inline keys (standard OpenAPI fields
-// we do not model) are ignored.
+// key that local execution cannot honor (see unsupportedInlineExtensions). All
+// other inline keys — airbyte metadata/carried extensions and standard OpenAPI
+// fields we do not model — are ignored.
 func rejectUnknownInline(exts map[string]yaml.Node) error {
 	if len(exts) == 0 {
 		return nil
@@ -309,8 +310,8 @@ func rejectUnknownInline(exts map[string]yaml.Node) error {
 	}
 	sort.Strings(keys) // deterministic error selection
 	for _, k := range keys {
-		if strings.HasPrefix(k, "x-airbyte-") && !allowedInlineExtensions[k] {
-			return unsupportedError(fmt.Sprintf("unknown extension %q is not supported by local execution", k))
+		if unsupportedInlineExtensions[k] {
+			return unsupportedError(fmt.Sprintf("extension %q is not supported by local execution", k))
 		}
 	}
 	return nil

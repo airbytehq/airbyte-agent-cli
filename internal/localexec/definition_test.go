@@ -305,7 +305,10 @@ paths:
 	}
 }
 
-func TestDefinitionUnknownExtensionUnsupported(t *testing.T) {
+// An unrecognized x-airbyte-* extension is accepted (real connectors carry many
+// metadata/carried extensions this phase does not model); only extensions local
+// execution genuinely cannot honor are rejected (see the deny-list test below).
+func TestDefinitionUnknownExtensionAccepted(t *testing.T) {
 	src := `
 openapi: 3.0.0
 servers:
@@ -316,6 +319,27 @@ paths:
       x-airbyte-entity: x
       x-airbyte-action: list
       x-airbyte-made-up-thing: true
+      responses:
+        "200": {description: OK}
+`
+	if _, err := ParseDefinition(src); err != nil {
+		t.Fatalf("unrecognized metadata extension should be accepted: %v", err)
+	}
+}
+
+// A deny-listed extension (runtime token refresh, which a stateless local
+// invocation cannot perform) is rejected.
+func TestDefinitionUnsupportedExtensionRejected(t *testing.T) {
+	src := `
+openapi: 3.0.0
+servers:
+  - url: https://api.example.test
+paths:
+  /x:
+    get:
+      x-airbyte-entity: x
+      x-airbyte-action: list
+      x-airbyte-token-refresh: {url: https://auth.example.test/token}
       responses:
         "200": {description: OK}
 `
