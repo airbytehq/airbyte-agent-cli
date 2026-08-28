@@ -341,7 +341,7 @@ func TestConnectorsExecute_LocalMissingBundle(t *testing.T) {
 	defer cleanup()
 
 	_, err := connectorsExecute(context.Background(), c, map[string]any{"id": "conn-1", "entity": "widget", "action": "list"})
-	assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
+	_ = assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
 	if provider.callCount() != 0 {
 		t.Errorf("provider must not be called when bundle is missing, got %d calls", provider.callCount())
 	}
@@ -403,7 +403,7 @@ func TestConnectorsExecute_LocalDecodeError(t *testing.T) {
 	defer cleanup()
 
 	_, err := connectorsExecute(context.Background(), c, map[string]any{"id": "conn-1", "entity": "widget", "action": "list"})
-	assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
+	_ = assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
 	if provider.callCount() != 0 {
 		t.Error("provider must not be called when decode fails")
 	}
@@ -501,7 +501,7 @@ func TestConnectorsExecute_LocalConnectorTransportErrorIsExit1(t *testing.T) {
 	defer cleanup()
 
 	_, err := connectorsExecute(context.Background(), c, map[string]any{"id": "conn-1", "entity": "widget", "action": "list"})
-	assertAPIExit(t, err, client.TypeConnectorExecutionError, client.ExitGeneral)
+	_ = assertAPIExit(t, err, client.TypeConnectorExecutionError, client.ExitGeneral)
 }
 
 // --- cancellation -------------------------------------------------------
@@ -588,7 +588,7 @@ func TestConnectorsExecute_InvalidExecutionModeIsValidationError(t *testing.T) {
 	)
 
 	_, err := connectorsExecute(context.Background(), c, map[string]any{"id": "conn-1", "entity": "widget", "action": "list"})
-	assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
+	_ = assertAPIExit(t, err, client.TypeValidation, client.ExitValidation)
 	if apiHit {
 		t.Error("no API call should be made when execution config is invalid")
 	}

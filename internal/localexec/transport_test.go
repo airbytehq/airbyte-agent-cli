@@ -21,7 +21,7 @@ func TestTransport_NoAirbyteHeadersLeak(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Clone()
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 
@@ -105,7 +105,7 @@ func TestTransport_CrossOriginStripsCredentials(t *testing.T) {
 func TestTransport_Timeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 	cfg := insecureTransportConfig()
@@ -120,7 +120,7 @@ func TestTransport_Timeout(t *testing.T) {
 func TestTransport_ContextCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 	tr := newTransport(insecureTransportConfig())
@@ -134,7 +134,7 @@ func TestTransport_ContextCancellation(t *testing.T) {
 
 func TestTransport_BodyLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(strings.Repeat("a", 1000)))
+		_, _ = w.Write([]byte(strings.Repeat("a", 1000)))
 	}))
 	defer srv.Close()
 	cfg := insecureTransportConfig()
@@ -154,7 +154,7 @@ func TestTransport_RetriesSafeMethod(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
 	cfg := insecureTransportConfig()
@@ -194,7 +194,7 @@ func TestTransport_NoRetryOnMutation(t *testing.T) {
 func TestTransport_Non2xxSanitized(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"secret_error":"do-not-leak this body"}`))
+		_, _ = w.Write([]byte(`{"secret_error":"do-not-leak this body"}`))
 	}))
 	defer srv.Close()
 	tr := newTransport(insecureTransportConfig())

@@ -156,7 +156,7 @@ func TestResolve_RejectsSecretBinary(t *testing.T) {
 	api := &fakeSecretsAPI{out: &secretsmanager.GetSecretValueOutput{SecretBinary: []byte{1, 2, 3}}}
 	p := newProvider(t, appconfig.ExecutionConfig{}, capturingLoader(&config.LoadOptions{}, awssdk.Config{}, nil), api)
 	_, err := p.Resolve(context.Background(), "id")
-	assertType(t, err, secrets.ErrHydration)
+	_ = assertType(t, err, secrets.ErrHydration)
 }
 
 func TestResolve_RejectsNonScalarJSON(t *testing.T) {
@@ -169,7 +169,7 @@ func TestResolve_RejectsNonScalarJSON(t *testing.T) {
 			api := &fakeSecretsAPI{out: &secretsmanager.GetSecretValueOutput{SecretString: strPtr(payload)}}
 			p := newProvider(t, appconfig.ExecutionConfig{}, capturingLoader(&config.LoadOptions{}, awssdk.Config{}, nil), api)
 			_, err := p.Resolve(context.Background(), "id")
-			assertType(t, err, secrets.ErrHydration)
+			_ = assertType(t, err, secrets.ErrHydration)
 		})
 	}
 }
@@ -280,7 +280,7 @@ func TestResolve_NoCredentialsIsAuthError(t *testing.T) {
 		WithClientFactory(func(awssdk.Config) secretsAPI { return &fakeSecretsAPI{} }),
 	)
 	_, err := p.Resolve(context.Background(), "id")
-	assertType(t, err, secrets.ErrAuthentication)
+	_ = assertType(t, err, secrets.ErrAuthentication)
 }
 
 func TestResolve_Cancellation(t *testing.T) {
@@ -298,7 +298,7 @@ func TestResolve_EmptyCoordinate(t *testing.T) {
 	api := &fakeSecretsAPI{}
 	p := newProvider(t, appconfig.ExecutionConfig{}, capturingLoader(&config.LoadOptions{}, awssdk.Config{}, nil), api)
 	_, err := p.Resolve(context.Background(), "   ")
-	assertType(t, err, secrets.ErrHydration)
+	_ = assertType(t, err, secrets.ErrHydration)
 }
 
 func TestResolve_RedactionNoSecretIDInMessages(t *testing.T) {

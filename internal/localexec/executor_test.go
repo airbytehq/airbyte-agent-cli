@@ -57,7 +57,7 @@ func TestExecutor_EndToEnd(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("X-API-Key")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"data":[{"id":1,"name":"a"},{"id":2,"name":"b"}],"meta":{"next":"c2"}}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":1,"name":"a"},{"id":2,"name":"b"}],"meta":{"next":"c2"}}`))
 	}))
 	defer srv.Close()
 
@@ -171,7 +171,7 @@ func TestExecutor_ErrorClassification(t *testing.T) {
 func TestExecutor_ConnectorErrorRedacted(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"detail":"leak-this-secret-detail"}`))
+		_, _ = w.Write([]byte(`{"detail":"leak-this-secret-detail"}`))
 	}))
 	defer srv.Close()
 	provider := newFakeProvider(nil)
@@ -192,7 +192,7 @@ func TestExecutor_ConnectorErrorRedacted(t *testing.T) {
 func TestExecutor_Cancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 	provider := newFakeProvider(nil)
@@ -212,7 +212,7 @@ func TestExecutor_ConcurrentInvocations(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Echo back the received key so a shared-state bug would surface.
-		w.Write([]byte(`{"data":[{"key":"` + r.Header.Get("X-API-Key") + `"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"key":"` + r.Header.Get("X-API-Key") + `"}]}`))
 	}))
 	defer srv.Close()
 
