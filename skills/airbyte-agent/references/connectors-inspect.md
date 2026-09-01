@@ -18,7 +18,7 @@ airbyte-agent connectors inspect --json '{"id": "<connector-id>"}'
 
 - Before the first `connectors execute` on an unfamiliar connector.
 - When you need the authoritative `docs_skill_id` for connector usage docs.
-- When checking context-store readiness and warnings before choosing `context_store_search` vs `list`.
+- When checking Context Store readiness and warnings before following the default read action named in `skills docs`.
 
 ## Workflow
 

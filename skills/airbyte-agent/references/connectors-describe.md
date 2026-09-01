@@ -39,12 +39,13 @@ airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fiel
 airbyte-agent connectors describe --json '{"workspace": "my-workspace", "name": "my-source"}'
 
 # 3. Execute the discovered entity + action
+# Values in angle brackets are placeholders; do not execute them literally.
 airbyte-agent connectors execute --json '{
   "workspace": "my-workspace",
   "name": "my-source",
-  "entity": "users",
-  "action": "context_store_search",
-  "select_fields": ["id", "email"]
+  "entity": "<entity-from-skills-docs>",
+  "action": "<action-from-skills-docs>",
+  "select_fields": ["<field-from-skills-docs>"]
 }'
 ```
 
