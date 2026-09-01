@@ -942,9 +942,20 @@ func TestFieldsFilterRejectsCompletelyUnmatchedPaths(t *testing.T) {
 	defer restore()
 
 	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-	defer func() { os.Stderr = oldStderr }()
+	stderrR, stderrW, _ := os.Pipe()
+	os.Stderr = stderrW
+	defer func() {
+		os.Stderr = oldStderr
+		_ = stderrR.Close()
+	}()
+
+	oldStdout := os.Stdout
+	stdoutR, stdoutW, _ := os.Pipe()
+	os.Stdout = stdoutW
+	defer func() {
+		os.Stdout = oldStdout
+		_ = stdoutR.Close()
+	}()
 
 	root := newTestRoot()
 	Build(root, stubClient(), &stubFlags{fields: []string{"data.id", "meta"}})
@@ -954,16 +965,23 @@ func TestFieldsFilterRejectsCompletelyUnmatchedPaths(t *testing.T) {
 		_ = root.Execute()
 	}()
 
-	_ = w.Close()
+	_ = stderrW.Close()
+	_ = stdoutW.Close()
 	if *exitCode != client.ExitValidation {
 		t.Fatalf("expected exit %d, got %d", client.ExitValidation, *exitCode)
 	}
 
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(r)
+	var stdout bytes.Buffer
+	_, _ = stdout.ReadFrom(stdoutR)
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for unmatched projection, got %s", stdout.String())
+	}
+
+	var stderr bytes.Buffer
+	_, _ = stderr.ReadFrom(stderrR)
 	var errPayload map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &errPayload); err != nil {
-		t.Fatalf("parsing stderr: %v (raw: %s)", err, buf.String())
+	if err := json.Unmarshal(stderr.Bytes(), &errPayload); err != nil {
+		t.Fatalf("parsing stderr: %v (raw: %s)", err, stderr.String())
 	}
 	if errPayload["type"] != "validation_error" {
 		t.Errorf("expected type=validation_error, got %v", errPayload["type"])
@@ -973,8 +991,72 @@ func TestFieldsFilterRejectsCompletelyUnmatchedPaths(t *testing.T) {
 		t.Errorf("expected message to list unmatched paths, got %q", message)
 	}
 	hint, _ := errPayload["hint"].(string)
-	if !strings.Contains(hint, "remove --fields") {
-		t.Errorf("expected hint to explain recovery, got %q", hint)
+	if !strings.Contains(hint, "already completed") || !strings.Contains(hint, "do not re-run") {
+		t.Errorf("expected hint to prevent duplicate writes, got %q", hint)
+	}
+	detail, ok := errPayload["detail"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured error detail, got %T", errPayload["detail"])
+	}
+	if detail["operation_completed"] != true {
+		t.Errorf("expected operation_completed=true, got %v", detail["operation_completed"])
+	}
+	response, ok := detail["response"].(map[string]any)
+	if !ok || response["status"] != "success" {
+		t.Errorf("expected completed response to be preserved in detail, got %v", detail["response"])
+	}
+}
+
+func TestFieldsFilterMalformedJSONExitsGeneralError(t *testing.T) {
+	t.Cleanup(func() { Reset() })
+
+	Register(newMockResource("items", "Items",
+		Operation{
+			Name:        "list",
+			Description: "List items",
+			Schema:      OperationSchema{Params: map[string]ParamSchema{}},
+			Run: func(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
+				return json.RawMessage(`not-json`), nil
+			},
+		},
+	))
+
+	exitCode, restore := captureExit(t)
+	defer restore()
+
+	oldStderr := os.Stderr
+	stderrR, stderrW, _ := os.Pipe()
+	os.Stderr = stderrW
+	defer func() {
+		os.Stderr = oldStderr
+		_ = stderrR.Close()
+	}()
+
+	root := newTestRoot()
+	Build(root, stubClient(), &stubFlags{fields: []string{"id"}})
+	root.SetArgs([]string{"items", "list"})
+	func() {
+		defer func() { _ = recover() }()
+		_ = root.Execute()
+	}()
+
+	_ = stderrW.Close()
+	if *exitCode != client.ExitGeneral {
+		t.Fatalf("expected exit %d, got %d", client.ExitGeneral, *exitCode)
+	}
+
+	var stderr bytes.Buffer
+	_, _ = stderr.ReadFrom(stderrR)
+	var errPayload map[string]any
+	if err := json.Unmarshal(stderr.Bytes(), &errPayload); err != nil {
+		t.Fatalf("parsing stderr: %v (raw: %s)", err, stderr.String())
+	}
+	if errPayload["type"] != "error" {
+		t.Errorf("expected type=error, got %v", errPayload["type"])
+	}
+	message, _ := errPayload["message"].(string)
+	if !strings.Contains(message, "decoding JSON value") {
+		t.Errorf("expected malformed JSON diagnostic, got %q", message)
 	}
 }
 

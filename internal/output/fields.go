@@ -2,6 +2,8 @@ package output
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -12,34 +14,23 @@ import (
 // If paths is empty, the original value is returned unchanged. Individual
 // missing paths are skipped when at least one requested path matches.
 //
-// json.RawMessage inputs are unmarshaled into a generic value before filtering.
+// Filter intentionally ignores the match result for callers that only need the
+// projected value. Use FilterWithMatch when a complete miss must be detected.
 func Filter(value any, paths []string) any {
-	filtered, _ := FilterWithMatch(value, paths)
+	filtered, _, err := FilterWithMatch(value, paths)
+	if err != nil {
+		return value
+	}
 	return filtered
 }
 
 // FilterWithMatch filters value and reports whether at least one requested
 // path matched. Empty arrays count as matches because they may have no rows
-// against which to resolve a valid row-level path.
-func FilterWithMatch(value any, paths []string) (any, bool) {
+// against which to resolve a valid row-level path. Invalid JSON-shaped values
+// return an error instead of being reported as either a match or a miss.
+func FilterWithMatch(value any, paths []string) (any, bool, error) {
 	if len(paths) == 0 {
-		return value, true
-	}
-
-	// Normalize json.RawMessage / []byte into a generic value.
-	switch v := value.(type) {
-	case json.RawMessage:
-		var decoded any
-		if err := json.Unmarshal(v, &decoded); err != nil {
-			return value, true
-		}
-		return filter(decoded, paths)
-	case []byte:
-		var decoded any
-		if err := json.Unmarshal(v, &decoded); err != nil {
-			return value, true
-		}
-		return filter(decoded, paths)
+		return value, true, nil
 	}
 
 	return filter(value, paths)
@@ -47,13 +38,25 @@ func FilterWithMatch(value any, paths []string) (any, bool) {
 
 // filter walks the generic value tree, retaining only the nodes named by the
 // provided paths.
-func filter(value any, paths []string) (any, bool) {
+func filter(value any, paths []string) (any, bool, error) {
 	groups, hasTerminal := groupPaths(paths)
 	if hasTerminal {
-		return value, true
+		return value, true, nil
 	}
 
 	switch v := value.(type) {
+	case json.RawMessage:
+		var decoded any
+		if err := json.Unmarshal(v, &decoded); err != nil {
+			return nil, false, fmt.Errorf("decoding JSON value: %w", err)
+		}
+		return filter(decoded, paths)
+	case []byte:
+		var decoded any
+		if err := json.Unmarshal(v, &decoded); err != nil {
+			return nil, false, fmt.Errorf("decoding JSON value: %w", err)
+		}
+		return filter(decoded, paths)
 	case map[string]any:
 		// Smart wrapper fallback: list-style endpoints commonly return
 		// {"data": [...], ...}. If none of the requested paths match a
@@ -91,27 +94,35 @@ func filter(value any, paths []string) (any, bool) {
 			if !ok {
 				continue
 			}
-			filtered, childMatched := filter(child, remaining)
+			filtered, childMatched, err := filter(child, remaining)
+			if err != nil {
+				return nil, false, err
+			}
 			if !childMatched {
 				continue
 			}
 			out[key] = filtered
 			matched = true
 		}
-		return out, matched
+		return out, matched, nil
 	case []any:
 		// Array broadcast: apply the same paths to every element.
 		out := make([]any, len(v))
 		if len(v) == 0 {
-			return out, true
+			return out, true, nil
 		}
 		matched := false
 		for i, item := range v {
-			filtered, itemMatched := filter(item, paths)
-			out[i] = filtered
+			filtered, itemMatched, err := filter(item, paths)
+			if err != nil {
+				return nil, false, err
+			}
+			if itemMatched || isJSONContainer(filtered) {
+				out[i] = filtered
+			}
 			matched = matched || itemMatched
 		}
-		return out, matched
+		return out, matched, nil
 	case []json.RawMessage:
 		// Array of unparsed JSON values — operations that page through API
 		// responses without fully decoding each row hand back this shape
@@ -119,23 +130,35 @@ func filter(value any, paths []string) (any, bool) {
 		// filter logic doesn't need to know about late-bound JSON.
 		out := make([]any, len(v))
 		if len(v) == 0 {
-			return out, true
+			return out, true, nil
 		}
 		matched := false
 		for i, item := range v {
 			var decoded any
 			if err := json.Unmarshal(item, &decoded); err != nil {
-				out[i] = item
-				continue
+				return nil, false, fmt.Errorf("decoding JSON array element %d: %w", i, err)
 			}
-			filtered, itemMatched := filter(decoded, paths)
-			out[i] = filtered
+			filtered, itemMatched, err := filter(decoded, paths)
+			if err != nil {
+				return nil, false, err
+			}
+			if itemMatched || isJSONContainer(filtered) {
+				out[i] = filtered
+			}
 			matched = matched || itemMatched
 		}
-		return out, matched
+		return out, matched, nil
 	default:
-		// Primitive — nothing to filter.
-		return v, false
+		normalized, ok, err := normalizeJSONContainer(v)
+		if err != nil {
+			return nil, false, err
+		}
+		if ok {
+			return filter(normalized, paths)
+		}
+		// Primitive — nothing below it can match. The caller decides whether
+		// to retain the value based on whether a sibling matched.
+		return v, false, nil
 	}
 }
 
@@ -143,10 +166,49 @@ func filter(value any, paths []string) (any, bool) {
 // how to broadcast through.
 func isJSONArray(v any) bool {
 	switch v.(type) {
+	case json.RawMessage, []byte:
+		return false
 	case []any, []json.RawMessage:
 		return true
 	}
+
+	rv := reflect.ValueOf(v)
+	return rv.IsValid() && (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array)
+}
+
+func isJSONContainer(v any) bool {
+	switch v.(type) {
+	case map[string]any, []any:
+		return true
+	}
 	return false
+}
+
+// normalizeJSONContainer converts typed maps, slices, arrays, structs, and
+// pointers into the generic JSON shapes used by the filter. Operation results
+// are not required to use map[string]any (for example, connector creation
+// returns map[string]string), but --fields must behave consistently for every
+// JSON-serializable result.
+func normalizeJSONContainer(value any) (any, bool, error) {
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() {
+		return nil, false, nil
+	}
+	switch rv.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Pointer:
+	default:
+		return nil, false, nil
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, false, fmt.Errorf("encoding JSON value: %w", err)
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, false, fmt.Errorf("decoding normalized JSON value: %w", err)
+	}
+	return decoded, true, nil
 }
 
 // groupPaths splits each path on its first "." and returns a map of head

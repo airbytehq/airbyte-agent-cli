@@ -35,7 +35,7 @@ Connectors may expose these actions, but the authoritative list for a given conn
 | `context_store_search` | Query the Context Store with documented filters and sorting. Use only when `skills docs` names it for this connector. | yes (rich) |
 | `list` | Read from the live source when the connector's execution guidance calls for it. | limited |
 | `get` | Fetch a single entity by ID. | n/a |
-| `api_search` | Provider-native search (e.g. Slack search syntax). Returns `{data, meta: {has_more}}`. | provider-specific |
+| `api_search` | Provider-native search (e.g. Slack search syntax). Its `result` typically contains `{data, meta: {has_more}}`. | provider-specific |
 | `create` | Write a new entity. | n/a |
 | `update` | Modify an existing entity. | n/a |
 
@@ -169,7 +169,7 @@ airbyte-agent connectors execute --fields result.data.id,result.meta,warning --j
 airbyte-agent connectors execute --fields result.data.total_users,result.meta,warning --json @params.json
 ```
 
-The automatic single-array wrapper fallback only applies to a top-level array wrapper such as `{"data": [...]}`; it does not traverse through `result`. If none of the requested paths exist, the CLI returns a `validation_error` with exit code 4. Remove `--fields` to inspect the full envelope, then retry with exact dotted paths.
+The automatic single-array wrapper fallback only applies to a top-level array wrapper such as `{"data": [...]}`; it does not traverse through `result`. An empty array counts as a match once its prefix resolves because there are no rows against which to validate deeper segments. If none of the requested paths exist, the CLI returns a `validation_error` with exit code 4 after the operation completes and preserves the unfiltered envelope under `detail.response`. Use that response to correct `--fields` for future calls; do not re-run a write action solely to repair its projection.
 
 ## Write actions (`create`, `update`)
 
@@ -182,6 +182,7 @@ The automatic single-array wrapper fallback only applies to a top-level array wr
 |---|---|---|
 | `not_found` (exit 3) on connector | Name not found | Run `connectors list` to see exact names. The CLI matches against connector instance name, template display name, AND template slug, case-insensitively — so any of those works. |
 | `validation_error` (exit 4) on entity/action | Guessed entity/action name | Run `connectors inspect`, then `skills docs`, to enumerate supported entities and actions. |
+| `validation_error` (exit 4) mentioning `--fields` | No requested CLI projection path matched the completed response | Inspect `detail.response`, then use `result.*` paths on future `execute` calls. Do not re-run a write solely to correct its projection. |
 | Ambiguous name (exit 4) | Two connectors share a name | Pass `"id": "<uuid>"` in the JSON payload instead of `"name"`. |
 | `auth_error` (exit 2) | Credentials invalid or expired | Re-run `airbyte-agent login` to refresh credentials. |
 | Empty or stale Context Store result | Index lag or a query that is too narrow | Follow the selected action's server-rendered execution guidance; do not switch actions based on a local fallback. |
@@ -195,4 +196,5 @@ The automatic single-array wrapper fallback only applies to a top-level array wr
 - Do NOT paginate beyond 3 pages — narrow the query instead.
 - Do NOT pass relative dates ("today", "last week") — resolve to absolute ISO 8601 timestamps and report the range to the user.
 - Do NOT silently retry write failures against a different target.
+- Do NOT re-run a successful write solely because its `--fields` projection failed; recover the response from the error's `detail.response`.
 - Do NOT truncate the `execute` response or pipe it through `head`/`tail`/`sed`/`awk`/`cut`/`wc` — read the full output. If it's too large, narrow the query (`select_fields`, filters, `limit`); don't slice the result.
