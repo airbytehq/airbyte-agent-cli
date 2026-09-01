@@ -27,7 +27,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "", "Output file path")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
-	rootCmd.PersistentFlags().StringSliceVar(&fields, "fields", nil, "Filter response to only the listed fields (comma-separated, dotted paths, e.g. 'data.id,data.name')")
+	rootCmd.PersistentFlags().StringSliceVar(&fields, "fields", nil, "Filter response to listed dotted paths; fails if none match (e.g. 'data.id,data.name')")
 }
 
 func Execute() error {

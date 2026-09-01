@@ -82,15 +82,20 @@ If `skills docs` does not provide execution guidance, retry that docs request on
 
 ## Response structure
 
-```jsonc
-// Common collection shape for list / api_search when their docs specify it
-{ "data": [ ... ], "meta": { "has_more": true } }
+Successful `connectors execute` responses keep the server's standardized envelope; the CLI does not unwrap `result`:
 
-// get — returns the entity directly, no envelope
-{ "id": "...", ... }
+```jsonc
+{
+  "status": "success",
+  "result": {
+    "data": [ ... ],
+    "meta": { "has_more": false }
+  },
+  "warning": {}
+}
 ```
 
-Response and pagination details vary by action. Follow the exact action section in `skills docs` rather than assuming cursor pagination.
+The contents of `result` vary by action. Follow the exact action section in `skills docs` rather than assuming a collection shape or cursor pagination.
 
 > [!IMPORTANT]
 > **Read the full response. Never truncate.** Run `execute` directly and read the entire stdout as one result. Do NOT pipe through `head`, `tail`, `sed`, `awk`, `cut`, `wc`, or any other tool that drops bytes, and do NOT cap output with `--fields` solely to make it shorter. If the response is large, that *is* the answer — narrow the query (`select_fields`, a tighter condition, a smaller `limit`) at the source rather than slicing the output after the fact. Truncated output silently hides records, `has_more`, errors, and pagination cursors.
@@ -137,7 +142,7 @@ When filtering by a related entity (a person, team, project, account…), foreig
 ## Pagination
 
 - **Default `limit`: 20–25.** Don't paginate unless the user explicitly asks for "all".
-- For *"how many"*-style questions with `has_more=true`, answer **"at least N"** rather than counting through every page.
+- For *"how many"*-style questions with `result.meta.has_more=true`, answer **"at least N"** rather than counting through every page.
 - **Hard stop at 3 pages.** If you'd need more, narrow the query instead.
 - Use only the pagination mechanism in the selected action's docs. Depending on the action, this may be cursor-based or SQL `LIMIT`/`OFFSET`; do not translate between them.
 
@@ -154,7 +159,17 @@ Two complementary mechanisms — use **both** when you know the fields you need:
 - **`select_fields` / `exclude_fields` (API-side, inside the JSON payload)** — limits fields returned by the execute request. Follow the selected action's docs for supported field names. If both are passed, `select_fields` wins.
 - **`--fields` (CLI-side, global flag)** — shapes the JSON the CLI prints to stdout, after the API responds.
 
-`--fields` (CLI) auto-broadcasts row-level paths through the `data` wrapper, so `--fields id,email` is equivalent to `--fields data.id,data.email` *unless* you also want top-level fields like `meta`/`next` — then use the explicit dotted form for the row paths.
+`connectors execute` does not unwrap the standardized response envelope before applying `--fields`. Address action data through `result`, and retain `warning` when the caller needs any non-fatal server notice:
+
+```bash
+# Collection/search row fields
+airbyte-agent connectors execute --fields result.data.id,result.meta,warning --json @params.json
+
+# SQL aggregate fields
+airbyte-agent connectors execute --fields result.data.total_users,result.meta,warning --json @params.json
+```
+
+The automatic single-array wrapper fallback only applies to a top-level array wrapper such as `{"data": [...]}`; it does not traverse through `result`. If none of the requested paths exist, the CLI returns a `validation_error` with exit code 4. Remove `--fields` to inspect the full envelope, then retry with exact dotted paths.
 
 ## Write actions (`create`, `update`)
 

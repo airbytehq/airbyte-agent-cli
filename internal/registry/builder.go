@@ -491,7 +491,14 @@ func handleRunError(err error) error {
 
 func writeResult(result any, flags flagAccessor) error {
 	if fields := flags.GetFields(); len(fields) > 0 {
-		result = output.Filter(result, fields)
+		filtered, matched := output.FilterWithMatch(result, fields)
+		if !matched {
+			return handleRunError(client.NewValidationError(
+				fmt.Sprintf("none of the requested --fields paths matched the response: %s", strings.Join(fields, ", ")),
+				"remove --fields to inspect the response, then retry with exact dotted paths",
+			))
+		}
+		result = filtered
 	}
 	return output.Write(result, flags.GetOutput())
 }

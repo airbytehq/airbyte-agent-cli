@@ -85,8 +85,67 @@ func TestFilter_BareKeyKeepsSubtree(t *testing.T) {
 
 func TestFilter_MissingPathSkippedSilently(t *testing.T) {
 	in := map[string]any{"id": "x"}
-	got := Filter(in, []string{"id", "missing", "deeply.nested.missing"})
+	got, matched := FilterWithMatch(in, []string{"id", "missing", "deeply.nested.missing"})
 	want := map[string]any{"id": "x"}
+	if !matched {
+		t.Fatal("expected existing id path to count as a match")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_NestedExecuteEnvelope(t *testing.T) {
+	in := map[string]any{
+		"status": "success",
+		"result": map[string]any{
+			"data": []any{map[string]any{"total_users": 4, "ignored": true}},
+			"meta": map[string]any{"has_more": false},
+		},
+		"warning": map[string]any{},
+	}
+
+	got, matched := FilterWithMatch(in, []string{"result.data.total_users", "result.meta", "warning"})
+	want := map[string]any{
+		"result": map[string]any{
+			"data": []any{map[string]any{"total_users": 4}},
+			"meta": map[string]any{"has_more": false},
+		},
+		"warning": map[string]any{},
+	}
+	if !matched {
+		t.Fatal("expected projection to match execute envelope")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_CompletelyUnmatched(t *testing.T) {
+	in := map[string]any{
+		"result": map[string]any{
+			"data": []any{map[string]any{"id": "1"}},
+		},
+	}
+
+	got, matched := FilterWithMatch(in, []string{"data.id", "meta"})
+	want := map[string]any{}
+	if matched {
+		t.Fatal("expected projection to report no matches")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_EmptyArrayCountsAsMatch(t *testing.T) {
+	in := map[string]any{"data": []any{}}
+
+	got, matched := FilterWithMatch(in, []string{"data.id"})
+	want := map[string]any{"data": []any{}}
+	if !matched {
+		t.Fatal("expected empty array projection to count as a match")
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}

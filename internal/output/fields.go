@@ -9,14 +9,21 @@ import (
 // dotted notation (e.g. "data.id"); when a path segment encounters an array,
 // the remaining segments are applied to each element ("array broadcast").
 //
-// If paths is empty, the original value is returned unchanged. Missing paths
-// are silently skipped — callers do not need to know which fields a given
-// response contains.
+// If paths is empty, the original value is returned unchanged. Individual
+// missing paths are skipped when at least one requested path matches.
 //
 // json.RawMessage inputs are unmarshaled into a generic value before filtering.
 func Filter(value any, paths []string) any {
+	filtered, _ := FilterWithMatch(value, paths)
+	return filtered
+}
+
+// FilterWithMatch filters value and reports whether at least one requested
+// path matched. Empty arrays count as matches because they may have no rows
+// against which to resolve a valid row-level path.
+func FilterWithMatch(value any, paths []string) (any, bool) {
 	if len(paths) == 0 {
-		return value
+		return value, true
 	}
 
 	// Normalize json.RawMessage / []byte into a generic value.
@@ -24,13 +31,13 @@ func Filter(value any, paths []string) any {
 	case json.RawMessage:
 		var decoded any
 		if err := json.Unmarshal(v, &decoded); err != nil {
-			return value
+			return value, true
 		}
 		return filter(decoded, paths)
 	case []byte:
 		var decoded any
 		if err := json.Unmarshal(v, &decoded); err != nil {
-			return value
+			return value, true
 		}
 		return filter(decoded, paths)
 	}
@@ -40,19 +47,14 @@ func Filter(value any, paths []string) any {
 
 // filter walks the generic value tree, retaining only the nodes named by the
 // provided paths.
-func filter(value any, paths []string) any {
+func filter(value any, paths []string) (any, bool) {
 	groups, hasTerminal := groupPaths(paths)
+	if hasTerminal {
+		return value, true
+	}
 
 	switch v := value.(type) {
 	case map[string]any:
-		if hasTerminal {
-			// A bare path (e.g. "data" with nothing after) means "keep this
-			// whole subtree" — but we may also have deeper paths under the
-			// same key (e.g. "data" and "data.id"). Treat the bare path as
-			// dominant: keep the whole subtree without further filtering.
-			return v
-		}
-
 		// Smart wrapper fallback: list-style endpoints commonly return
 		// {"data": [...], ...}. If none of the requested paths match a
 		// top-level key but there is exactly one array-valued sibling,
@@ -83,39 +85,57 @@ func filter(value any, paths []string) any {
 		}
 
 		out := make(map[string]any, len(groups))
+		matched := false
 		for key, remaining := range groups {
 			child, ok := v[key]
 			if !ok {
 				continue
 			}
-			out[key] = filter(child, remaining)
+			filtered, childMatched := filter(child, remaining)
+			if !childMatched {
+				continue
+			}
+			out[key] = filtered
+			matched = true
 		}
-		return out
+		return out, matched
 	case []any:
 		// Array broadcast: apply the same paths to every element.
 		out := make([]any, len(v))
-		for i, item := range v {
-			out[i] = filter(item, paths)
+		if len(v) == 0 {
+			return out, true
 		}
-		return out
+		matched := false
+		for i, item := range v {
+			filtered, itemMatched := filter(item, paths)
+			out[i] = filtered
+			matched = matched || itemMatched
+		}
+		return out, matched
 	case []json.RawMessage:
 		// Array of unparsed JSON values — operations that page through API
 		// responses without fully decoding each row hand back this shape
 		// (e.g. workspaces list). Decode each element on the fly so the
 		// filter logic doesn't need to know about late-bound JSON.
 		out := make([]any, len(v))
+		if len(v) == 0 {
+			return out, true
+		}
+		matched := false
 		for i, item := range v {
 			var decoded any
 			if err := json.Unmarshal(item, &decoded); err != nil {
 				out[i] = item
 				continue
 			}
-			out[i] = filter(decoded, paths)
+			filtered, itemMatched := filter(decoded, paths)
+			out[i] = filtered
+			matched = matched || itemMatched
 		}
-		return out
+		return out, matched
 	default:
 		// Primitive — nothing to filter.
-		return v
+		return v, false
 	}
 }
 
