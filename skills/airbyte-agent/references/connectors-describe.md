@@ -39,14 +39,15 @@ airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fiel
 airbyte-agent connectors describe --json '{"workspace": "my-workspace", "name": "my-source"}'
 
 # 3. Execute the discovered entity + action
-# Values in angle brackets are placeholders; do not execute them literally.
+# Values in angle brackets are placeholders. Replace the empty params object in
+# full with the exact object from skills docs; do not execute placeholders.
 airbyte-agent connectors execute --json '{
   "workspace": "my-workspace",
   "name": "my-source",
   "entity": "<entity-from-skills-docs>",
   "action": "<action-from-skills-docs>",
   "select_fields": ["<field-from-skills-docs>"],
-  "params": {"<exact-params-from-skills-docs>": "<value>"}
+  "params": {}
 }'
 ```
 

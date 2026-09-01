@@ -8,15 +8,16 @@ Run an action against an entity on a connector — the workhorse command for act
 ## Usage
 
 ```bash
-# Values in angle brackets are placeholders; do not execute them literally.
+# Values in angle brackets are placeholders. Replace the empty params object in
+# full with the exact object from skills docs; do not execute placeholders.
 airbyte-agent connectors execute --json '{
   "workspace": "default",
   "name": "<connector>",
   "entity": "<entity-from-skills-docs>",
   "action": "<action-from-skills-docs>",
   "select_fields": ["<field-from-skills-docs>"],
-  "params": {"<exact-params-from-skills-docs>": "<value>"},
-  "intent": "look up contact details for Teo to draft an intro email"
+  "params": {},
+  "intent": "<why-this-call-is-needed>"
 }'
 ```
 
@@ -63,14 +64,15 @@ airbyte-agent connectors inspect --json '{"workspace": "default", "name": "<conn
 airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
 airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
-# 2. Now compose execute, knowing the contract
+# 2. Now compose execute, knowing the contract. Replace params {} in full with
+# the exact object from the selected action section.
 airbyte-agent connectors execute --json '{
   "workspace": "default",
   "name": "<connector>",
   "entity": "<an-entity-from-skills-docs>",
   "action": "<an-action-from-skills-docs>",
   "select_fields": ["<field-from-skills-docs>", "..."],
-  "params": { ... per the params docs ... }
+  "params": {}
 }'
 ```
 
@@ -97,7 +99,7 @@ Response and pagination details vary by action. Follow the exact action section 
 
 The initial `skills docs` response names the default Context Store read action for the connector. Read that action's exact section before composing `params`: it owns the query syntax, supported fields, physical SQL table names, freshness behavior, and pagination contract. Never translate parameters from one Context Store action to the other.
 
-The following payloads are migration-oriented skeletons only. Replace every angle-bracket placeholder with the exact parameter object from the connector's action section; do not execute them literally.
+The following payloads are migration-oriented skeletons only. Replace every angle-bracket placeholder and replace each empty `params` object in full with the exact object from the connector's action section; do not execute them literally.
 
 `context_store_search` skeleton, for connectors whose docs name it:
 
@@ -106,7 +108,7 @@ The following payloads are migration-oriented skeletons only. Replace every angl
   "entity": "<entity-from-skills-docs>",
   "action": "context_store_search",
   "select_fields": ["<field-from-skills-docs>"],
-  "params": {"<exact-search-param-from-action-section>": "<documented-value>"}
+  "params": {}
 }
 ```
 
@@ -117,7 +119,7 @@ The following payloads are migration-oriented skeletons only. Replace every angl
   "entity": "<entity-from-skills-docs>",
   "action": "context_store_sql_query",
   "select_fields": ["<column-from-skills-docs>"],
-  "params": {"<exact-SQL-param-from-action-section>": "<documented-value>"}
+  "params": {}
 }
 ```
 

@@ -72,14 +72,15 @@ airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fiel
 airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
 # 3. Read data using the default action and exact params named in skills docs.
-# Values in angle brackets are placeholders; do not execute them literally.
+# Values in angle brackets are placeholders. Replace the empty params object in
+# full with the exact object from skills docs; do not execute placeholders.
 airbyte-agent connectors execute --json '{
   "workspace": "<name>",
   "name": "<connector>",
   "entity": "<from-skills-docs>",
   "action": "<default-context-store-read-action-from-skills-docs>",
   "select_fields": ["<field-from-skills-docs>"],
-  "params": {"<exact-params-from-skills-docs>": "<value>"}
+  "params": {}
 }'
 ```
 
