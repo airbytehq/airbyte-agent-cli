@@ -76,12 +76,12 @@ airbyte-agent connectors execute --json '{
 
 If `execute` returns `validation_error` on `entity` or `action`, you guessed or read the wrong section — inspect, read the exact docs section, and retry with the real names.
 
-If `skills docs` does not provide execution guidance, retry `connectors inspect` and `skills docs` once. If guidance is still unavailable, report that the connector's execution contract could not be determined; do not guess a read action.
+If `skills docs` does not provide execution guidance, retry that docs request once with the same `docs_skill_id`. Re-run `connectors inspect` only when inspect itself failed or returned no ID. If guidance is still unavailable, report that the connector's execution contract could not be determined; do not guess a read action.
 
 ## Response structure
 
 ```jsonc
-// list / api_search / Context Store read actions
+// Common collection shape for list / api_search when their docs specify it
 { "data": [ ... ], "meta": { "has_more": true } }
 
 // get — returns the entity directly, no envelope
@@ -97,7 +97,7 @@ Response and pagination details vary by action. Follow the exact action section 
 
 The initial `skills docs` response names the default Context Store read action for the connector. Read that action's exact section before composing `params`: it owns the query syntax, supported fields, physical SQL table names, freshness behavior, and pagination contract. Never translate parameters from one Context Store action to the other.
 
-The following payloads are migration-oriented skeletons only. Replace every angle-bracket placeholder with values from the connector's docs; do not execute them literally.
+The following payloads are migration-oriented skeletons only. Replace every angle-bracket placeholder with the exact parameter object from the connector's action section; do not execute them literally.
 
 `context_store_search` skeleton, for connectors whose docs name it:
 
@@ -106,7 +106,7 @@ The following payloads are migration-oriented skeletons only. Replace every angl
   "entity": "<entity-from-skills-docs>",
   "action": "context_store_search",
   "select_fields": ["<field-from-skills-docs>"],
-  "params": {"limit": 20, "query": {"filter": {"eq": {"<field-from-skills-docs>": "<value>"}}}}
+  "params": {"<exact-search-param-from-action-section>": "<documented-value>"}
 }
 ```
 
@@ -117,12 +117,11 @@ The following payloads are migration-oriented skeletons only. Replace every angl
   "entity": "<entity-from-skills-docs>",
   "action": "context_store_sql_query",
   "select_fields": ["<column-from-skills-docs>"],
-  "params": {
-    "sql": "SELECT <explicit-columns> FROM <physical-table-from-skills-docs> WHERE <condition> LIMIT 20",
-    "limit": 20
-  }
+  "params": {"<exact-SQL-param-from-action-section>": "<documented-value>"}
 }
 ```
+
+When the documented action uses SQL, issue one read-only statement over only the tables and columns listed in that action section. Never interpolate external text verbatim into SQL or treat user-provided identifiers as trusted. Use the safe value-binding or literal-escaping mechanism documented by the server; if none is documented for a user-controlled value, report the limitation instead of composing an unsafe query. Follow the action section for how SQL projection and `select_fields` compose—do not assume either one replaces the other.
 
 ## ID resolution (filtering by related entity)
 
@@ -169,7 +168,7 @@ Two complementary mechanisms — use **both** when you know the fields you need:
 | Ambiguous name (exit 4) | Two connectors share a name | Pass `"id": "<uuid>"` in the JSON payload instead of `"name"`. |
 | `auth_error` (exit 2) | Credentials invalid or expired | Re-run `airbyte-agent login` to refresh credentials. |
 | Empty or stale Context Store result | Index lag or a query that is too narrow | Follow the selected action's server-rendered execution guidance; do not switch actions based on a local fallback. |
-| Missing execution guidance | Docs request failed or returned an incomplete contract | Retry inspect/docs once, then report the missing guidance instead of guessing an action. |
+| Missing execution guidance | Docs request failed or returned an incomplete contract | Retry the docs request once; rerun inspect only if it failed or returned no `docs_skill_id`, then report the missing guidance instead of guessing an action. |
 
 ## Do NOT
 

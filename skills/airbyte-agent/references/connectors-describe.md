@@ -45,7 +45,8 @@ airbyte-agent connectors execute --json '{
   "name": "my-source",
   "entity": "<entity-from-skills-docs>",
   "action": "<action-from-skills-docs>",
-  "select_fields": ["<field-from-skills-docs>"]
+  "select_fields": ["<field-from-skills-docs>"],
+  "params": {"<exact-params-from-skills-docs>": "<value>"}
 }'
 ```
 
