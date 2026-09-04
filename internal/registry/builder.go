@@ -491,7 +491,24 @@ func handleRunError(err error) error {
 
 func writeResult(result any, flags flagAccessor) error {
 	if fields := flags.GetFields(); len(fields) > 0 {
-		result = output.Filter(result, fields)
+		filtered, matched, err := output.FilterWithMatch(result, fields)
+		if err != nil {
+			return handleRunError(fmt.Errorf("filtering --fields: %w", err))
+		}
+		if !matched {
+			validationErr := client.NewValidationError(
+				fmt.Sprintf("none of the requested --fields paths matched the response: %s", strings.Join(fields, ", ")),
+				"the operation already completed; inspect detail.response and correct --fields for future calls; do not re-run a write action solely to repair its projection",
+			)
+			if detail, err := json.Marshal(map[string]any{
+				"operation_completed": true,
+				"response":            result,
+			}); err == nil {
+				validationErr.Detail = detail
+			}
+			return handleRunError(validationErr)
+		}
+		result = filtered
 	}
 	return output.Write(result, flags.GetOutput())
 }

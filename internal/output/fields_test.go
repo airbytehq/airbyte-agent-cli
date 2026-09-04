@@ -83,10 +83,143 @@ func TestFilter_BareKeyKeepsSubtree(t *testing.T) {
 	}
 }
 
-func TestFilter_MissingPathSkippedSilently(t *testing.T) {
+func TestFilterWithMatch_PartialMissSkipped(t *testing.T) {
 	in := map[string]any{"id": "x"}
-	got := Filter(in, []string{"id", "missing", "deeply.nested.missing"})
+	got, matched := mustFilterWithMatch(t, in, []string{"id", "missing", "deeply.nested.missing"})
 	want := map[string]any{"id": "x"}
+	if !matched {
+		t.Fatal("expected existing id path to count as a match")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_NestedExecuteEnvelope(t *testing.T) {
+	in := map[string]any{
+		"status": "success",
+		"result": map[string]any{
+			"data": []any{map[string]any{"total_users": 4, "ignored": true}},
+			"meta": map[string]any{"has_more": false},
+		},
+		"warning": map[string]any{},
+	}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"result.data.total_users", "result.meta", "warning"})
+	want := map[string]any{
+		"result": map[string]any{
+			"data": []any{map[string]any{"total_users": 4}},
+			"meta": map[string]any{"has_more": false},
+		},
+		"warning": map[string]any{},
+	}
+	if !matched {
+		t.Fatal("expected projection to match execute envelope")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_CompletelyUnmatched(t *testing.T) {
+	in := map[string]any{
+		"result": map[string]any{
+			"data": []any{map[string]any{"id": "1"}},
+		},
+	}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"data.id", "meta"})
+	want := map[string]any{}
+	if matched {
+		t.Fatal("expected projection to report no matches")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_EmptyArrayCountsAsMatch(t *testing.T) {
+	in := map[string]any{"data": []any{}}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"data.id"})
+	want := map[string]any{"data": []any{}}
+	if !matched {
+		t.Fatal("expected empty array projection to count as a match")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_EmptyArrayWrapperFallbackCountsAsMatch(t *testing.T) {
+	in := map[string]any{"data": []any{}}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"unknown_row_field"})
+	want := map[string]any{"data": []any{}}
+	if !matched {
+		t.Fatal("expected empty wrapper array projection to count as a match")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_TypedMap(t *testing.T) {
+	in := map[string]string{"id": "1", "secret": "drop"}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"id"})
+	want := map[string]any{"id": "1"}
+	if !matched {
+		t.Fatal("expected typed map field to match")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_TypedArrayThroughWrapperFallback(t *testing.T) {
+	in := map[string]any{
+		"data": []map[string]string{
+			{"id": "1", "secret": "drop"},
+			{"id": "2", "secret": "drop"},
+		},
+	}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"id"})
+	want := map[string]any{
+		"data": []any{
+			map[string]any{"id": "1"},
+			map[string]any{"id": "2"},
+		},
+	}
+	if !matched {
+		t.Fatal("expected typed array field to match through wrapper fallback")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestFilterWithMatch_HeterogeneousArrayDoesNotRetainUnmatchedPrimitives(t *testing.T) {
+	in := map[string]any{
+		"data": []any{
+			map[string]any{"id": "1", "secret": "drop"},
+			"unprojectable",
+			map[string]any{"name": "missing id"},
+		},
+	}
+
+	got, matched := mustFilterWithMatch(t, in, []string{"data.id"})
+	want := map[string]any{
+		"data": []any{
+			map[string]any{"id": "1"},
+			nil,
+			map[string]any{},
+		},
+	}
+	if !matched {
+		t.Fatal("expected id in the first array element to match")
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -254,6 +387,20 @@ func TestFilter_RawMessageArrayWithExplicitDottedPaths(t *testing.T) {
 	}
 }
 
+func TestFilterWithMatch_UndecodableRawArrayElementReturnsError(t *testing.T) {
+	in := map[string]any{
+		"data": []json.RawMessage{json.RawMessage(`not-json`)},
+	}
+
+	_, matched, err := FilterWithMatch(in, []string{"data.id"})
+	if err == nil {
+		t.Fatal("expected malformed raw element to return an error")
+	}
+	if matched {
+		t.Fatal("malformed raw element must not count as a path match")
+	}
+}
+
 func TestFilter_BareWinsOverNested(t *testing.T) {
 	// If both "data" and "data.id" are requested, the bare path wins —
 	// the caller asked for everything under `data`.
@@ -267,4 +414,13 @@ func TestFilter_BareWinsOverNested(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
+}
+
+func mustFilterWithMatch(t *testing.T, value any, paths []string) (any, bool) {
+	t.Helper()
+	filtered, matched, err := FilterWithMatch(value, paths)
+	if err != nil {
+		t.Fatalf("unexpected filter error: %v", err)
+	}
+	return filtered, matched
 }

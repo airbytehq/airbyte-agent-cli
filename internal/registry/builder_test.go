@@ -851,6 +851,215 @@ func TestFieldsFilterAppliedToOutput(t *testing.T) {
 	}
 }
 
+func TestFieldsFilterAppliedToNestedExecuteEnvelope(t *testing.T) {
+	t.Cleanup(func() { Reset() })
+
+	Register(newMockResource("connectors", "Connectors",
+		Operation{
+			Name:        "execute",
+			Description: "Execute action",
+			Schema:      OperationSchema{Params: map[string]ParamSchema{}},
+			Run: func(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
+				return map[string]any{
+					"status": "success",
+					"result": map[string]any{
+						"data": []any{map[string]any{"total_users": 4, "ignored": true}},
+						"meta": map[string]any{"has_more": false},
+					},
+					"warning": map[string]any{},
+				}, nil
+			},
+		},
+	))
+
+	outFile := filepath.Join(t.TempDir(), "out.json")
+	root := newTestRoot()
+	flags := &stubFlags{
+		output: outFile,
+		fields: []string{"result.data.total_users", "result.meta", "warning"},
+	}
+	Build(root, stubClient(), flags)
+
+	root.SetArgs([]string{"connectors", "execute"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("reading output: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("parsing output: %v", err)
+	}
+	if _, ok := got["status"]; ok {
+		t.Fatalf("status should have been filtered out: %v", got)
+	}
+	result, ok := got["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %T", got["result"])
+	}
+	rows, ok := result["data"].([]any)
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected one result row, got %v", result["data"])
+	}
+	row, ok := rows[0].(map[string]any)
+	if !ok || row["total_users"] != float64(4) {
+		t.Fatalf("unexpected projected row: %v", rows[0])
+	}
+	if _, ok := row["ignored"]; ok {
+		t.Fatalf("ignored field should have been filtered out: %v", row)
+	}
+	if _, ok := result["meta"]; !ok {
+		t.Fatalf("expected result.meta to be retained: %v", result)
+	}
+	if _, ok := got["warning"]; !ok {
+		t.Fatalf("expected warning to be retained: %v", got)
+	}
+}
+
+func TestFieldsFilterRejectsCompletelyUnmatchedPaths(t *testing.T) {
+	t.Cleanup(func() { Reset() })
+
+	Register(newMockResource("connectors", "Connectors",
+		Operation{
+			Name:        "execute",
+			Description: "Execute action",
+			Schema:      OperationSchema{Params: map[string]ParamSchema{}},
+			Run: func(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
+				return map[string]any{
+					"status": "success",
+					"result": map[string]any{
+						"data": []any{map[string]any{"id": "1"}},
+					},
+				}, nil
+			},
+		},
+	))
+
+	exitCode, restore := captureExit(t)
+	defer restore()
+
+	oldStderr := os.Stderr
+	stderrR, stderrW, _ := os.Pipe()
+	os.Stderr = stderrW
+	defer func() {
+		os.Stderr = oldStderr
+		_ = stderrR.Close()
+	}()
+
+	oldStdout := os.Stdout
+	stdoutR, stdoutW, _ := os.Pipe()
+	os.Stdout = stdoutW
+	defer func() {
+		os.Stdout = oldStdout
+		_ = stdoutR.Close()
+	}()
+
+	root := newTestRoot()
+	Build(root, stubClient(), &stubFlags{fields: []string{"data.id", "meta"}})
+	root.SetArgs([]string{"connectors", "execute"})
+	func() {
+		defer func() { _ = recover() }()
+		_ = root.Execute()
+	}()
+
+	_ = stderrW.Close()
+	_ = stdoutW.Close()
+	if *exitCode != client.ExitValidation {
+		t.Fatalf("expected exit %d, got %d", client.ExitValidation, *exitCode)
+	}
+
+	var stdout bytes.Buffer
+	_, _ = stdout.ReadFrom(stdoutR)
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for unmatched projection, got %s", stdout.String())
+	}
+
+	var stderr bytes.Buffer
+	_, _ = stderr.ReadFrom(stderrR)
+	var errPayload map[string]any
+	if err := json.Unmarshal(stderr.Bytes(), &errPayload); err != nil {
+		t.Fatalf("parsing stderr: %v (raw: %s)", err, stderr.String())
+	}
+	if errPayload["type"] != "validation_error" {
+		t.Errorf("expected type=validation_error, got %v", errPayload["type"])
+	}
+	message, _ := errPayload["message"].(string)
+	if !strings.Contains(message, "data.id") || !strings.Contains(message, "meta") {
+		t.Errorf("expected message to list unmatched paths, got %q", message)
+	}
+	hint, _ := errPayload["hint"].(string)
+	if !strings.Contains(hint, "already completed") || !strings.Contains(hint, "do not re-run") {
+		t.Errorf("expected hint to prevent duplicate writes, got %q", hint)
+	}
+	detail, ok := errPayload["detail"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured error detail, got %T", errPayload["detail"])
+	}
+	if detail["operation_completed"] != true {
+		t.Errorf("expected operation_completed=true, got %v", detail["operation_completed"])
+	}
+	response, ok := detail["response"].(map[string]any)
+	if !ok || response["status"] != "success" {
+		t.Errorf("expected completed response to be preserved in detail, got %v", detail["response"])
+	}
+}
+
+func TestFieldsFilterMalformedJSONExitsGeneralError(t *testing.T) {
+	t.Cleanup(func() { Reset() })
+
+	Register(newMockResource("items", "Items",
+		Operation{
+			Name:        "list",
+			Description: "List items",
+			Schema:      OperationSchema{Params: map[string]ParamSchema{}},
+			Run: func(ctx context.Context, c *client.Client, params map[string]any) (any, error) {
+				return json.RawMessage(`not-json`), nil
+			},
+		},
+	))
+
+	exitCode, restore := captureExit(t)
+	defer restore()
+
+	oldStderr := os.Stderr
+	stderrR, stderrW, _ := os.Pipe()
+	os.Stderr = stderrW
+	defer func() {
+		os.Stderr = oldStderr
+		_ = stderrR.Close()
+	}()
+
+	root := newTestRoot()
+	Build(root, stubClient(), &stubFlags{fields: []string{"id"}})
+	root.SetArgs([]string{"items", "list"})
+	func() {
+		defer func() { _ = recover() }()
+		_ = root.Execute()
+	}()
+
+	_ = stderrW.Close()
+	if *exitCode != client.ExitGeneral {
+		t.Fatalf("expected exit %d, got %d", client.ExitGeneral, *exitCode)
+	}
+
+	var stderr bytes.Buffer
+	_, _ = stderr.ReadFrom(stderrR)
+	var errPayload map[string]any
+	if err := json.Unmarshal(stderr.Bytes(), &errPayload); err != nil {
+		t.Fatalf("parsing stderr: %v (raw: %s)", err, stderr.String())
+	}
+	if errPayload["type"] != "error" {
+		t.Errorf("expected type=error, got %v", errPayload["type"])
+	}
+	message, _ := errPayload["message"].(string)
+	if !strings.Contains(message, "decoding JSON value") {
+		t.Errorf("expected malformed JSON diagnostic, got %q", message)
+	}
+}
+
 func TestFieldsFilterDoesNotApplyToErrors(t *testing.T) {
 	t.Cleanup(func() { Reset() })
 

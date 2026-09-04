@@ -2,7 +2,7 @@
 name: airbyte-agent
 description: Drive the `airbyte-agent` CLI to manage Airbyte connectors, workspaces, and organizations. Run list/get/search/create/update actions against connector data (HubSpot, Salesforce, Slack, GitHub, etc.), install new connectors via the browser credential flow, list and switch workspaces, list organizations, inspect connector metadata, read skill docs, or print the merged CLI + OpenAPI schema for any operation. Use when the user mentions Airbyte, the `airbyte-agent` CLI, connectors, syncs, workspaces, organizations, or asks to read/write data from a connected SaaS product.
 metadata:
-  version: "v0.1.2"
+  version: "v0.1.3"
 ---
 
 # airbyte-agent
@@ -21,7 +21,7 @@ The CLI is invoked as `airbyte-agent <resource> <operation>`. It exposes Airbyte
 > **Always pass parameters as `--json '{...}'`.** The CLI also exposes per-parameter flags (`--workspace`, `--name`, etc.) for human use, but agents should always send a single JSON payload. The two modes are mutually exclusive and JSON keeps your input self-describing for review and replay.
 
 - **`workspace` defaults to `"default"`** when omitted. The CLI prints a JSON notice on stderr when the fallback engages, then proceeds with the API call. Override per-call with `"workspace": "..."` in the JSON payload, or set a session-wide default via `workspaces use`.
-- **`--fields` trims the response client-side.** When you know which fields you need, always pass it. List responses are wrapped in `{"data": [...]}` and the CLI auto-broadcasts row-level paths: `--fields id,name` is equivalent to `--fields data.id,data.name`. If you mix top-level and row-level paths (e.g. include the cursor), use the explicit dotted form for the row-level fields: `--fields data.id,next`.
+- **`--fields` trims the response client-side.** When you know which fields you need, always pass it. List responses are wrapped in `{"data": [...]}` and the CLI auto-broadcasts row-level paths: `--fields id,name` is equivalent to `--fields data.id,data.name`. `connectors execute` keeps its action payload under `result`, so use paths such as `result.data.id,result.meta,warning`; read its reference for details. Empty arrays count as matches once their prefix resolves. If no requested path matches, the CLI returns a validation error instead of `{}` and preserves the already-completed response under `detail.response`; do not re-run a write solely to fix its projection.
 - **Auth errors (exit 2)** mean credentials are missing, invalid, or expired — run `airbyte-agent login` to refresh, then retry.
 - **`@filename` loads JSON from a file** — useful when the payload is large or you want to keep the shell command short: `--json @params.json`.
 - **Never accept credentials in chat.** Two browser flows handle every credential entry path: `airbyte-agent login` (CLI account credentials) and `connectors create` (per-connector secrets). If a user offers credentials in conversation, decline and start the appropriate flow.
@@ -32,7 +32,7 @@ The CLI is invoked as `airbyte-agent <resource> <operation>`. It exposes Airbyte
 > **Always inspect and read skill docs before the first `execute`** on an unfamiliar connector. Run `connectors inspect`, then pass the returned `docs_skill_id` to `skills docs` for the outline and exact section you need. Entity names, actions, and params are connector-specific — guessing wastes API calls. Open [`references/connectors-inspect.md`](references/connectors-inspect.md) and [`references/skills-docs.md`](references/skills-docs.md) when starting work on a new connector.
 
 - **On `connectors execute`, field selection is MANDATORY.** Every call must include `select_fields` (allowlist) or `exclude_fields` (blocklist) inside the JSON payload, in addition to any `--fields` you pass.
-- **Prefer `context_store_search` over `list` for reads.** Search supports rich filters, sorting, and pagination; `list` is the live source — use it only when the search index might lag (today's data) or when search returns empty.
+- **For Context Store reads, follow the execution guidance in `skills docs`.** It names the default Context Store read action for this connector and documents its exact parameters. Do not hard-code an action or substitute another action based on local assumptions.
 - **Connector name resolution.** Most commands accept `name` (case-insensitive match against connector instance name, template display name, or template slug) OR `id` (UUID). Pass `id` when two connectors share a name.
 - **Legacy describe.** `connectors describe` remains for compatibility only. Use `connectors inspect` plus `skills docs` for new workflows.
 
@@ -71,14 +71,16 @@ airbyte-agent connectors inspect --json '{"workspace": "<name>", "name": "<conne
 airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>"}' --fields data.markdown
 airbyte-agent skills docs --json '{"id": "<docs_skill_id from inspect>", "section": "<exact-section-id>"}' --fields data.markdown
 
-# 3. Read data
+# 3. Read data using the default action and exact params named in skills docs.
+# Values in angle brackets are placeholders. Replace the empty params object in
+# full with the exact object from skills docs; do not execute placeholders.
 airbyte-agent connectors execute --json '{
   "workspace": "<name>",
   "name": "<connector>",
   "entity": "<from-skills-docs>",
-  "action": "context_store_search",
-  "select_fields": ["..."],
-  "params": {"limit": 20, "query": {"filter": {...}}}
+  "action": "<default-context-store-read-action-from-skills-docs>",
+  "select_fields": ["<field-from-skills-docs>"],
+  "params": {}
 }'
 ```
 
