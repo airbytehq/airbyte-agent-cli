@@ -3108,6 +3108,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3255,6 +3265,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3411,6 +3431,16 @@
           },
           "404": {
             "description": "Organization, workspace, connector, or skill not found."
+          },
+          "503": {
+            "description": "The organization skill registry is temporarily unavailable; retrying is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3570,7 +3600,7 @@
           "Workspaces"
         ],
         "summary": "Get Workspace Stats",
-        "description": "Get workspace statistics for the authenticated organization.\n\nReturns the count of active and inactive workspaces.",
+        "description": "Get workspace statistics for the authenticated organization.\n\nReturns the count of active and inactive workspaces visible to the caller.",
         "operationId": "get_workspaces_stats",
         "security": [
           {
@@ -3740,7 +3770,7 @@
           "Workspaces"
         ],
         "summary": "Update Workspace",
-        "description": "Update a workspace's name, status, and/or cache setting.\n- Set `name` to update the workspace name\n- Set `status` to 'active' or 'inactive' to change the workspace status\n- When setting status to 'inactive', all active connections for the workspace will be automatically disabled\n- Set `cache_enabled` to true/false to enable or disable Context Store caching for this workspace",
+        "description": "Update a workspace's name, status, color, and/or cache setting.\n- Set `name` to update the workspace name\n- Set `status` to 'active' or 'inactive' to change the workspace status\n- When setting status to 'inactive', all active connections for the workspace will be automatically disabled\n- Set `color` to change the workspace display color\n- Set `cache_enabled` to true/false to enable or disable Context Store caching for this workspace",
         "operationId": "update_workspaces_workspace_id",
         "security": [
           {
@@ -4573,20 +4603,44 @@
             "title": "Status"
           },
           "result": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
             "title": "Result"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecuteBundle"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "connector_metadata": {
             "title": "Connector Metadata"
           },
           "execution_metadata": {
             "$ref": "#/components/schemas/ExecutionMetadata"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextStoreInactivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "required": [
           "status",
-          "result",
-          "connector_metadata",
           "execution_metadata"
         ],
         "title": "ConnectorExecuteResponse",
@@ -4639,6 +4693,29 @@
             "title": "Updated At",
             "description": "Timestamp when cache metadata was last updated, when available."
           },
+          "sync_status": {
+            "type": "string",
+            "title": "Sync Status",
+            "description": "Current cache synchronization health."
+          },
+          "is_stale": {
+            "type": "boolean",
+            "title": "Is Stale",
+            "description": "Whether the last successful sync is older than its sync cadence."
+          },
+          "last_successful_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Sync At",
+            "description": "Timestamp of the most recent successful Context Store sync."
+          },
           "semantic_search_status": {
             "items": {
               "$ref": "#/components/schemas/ConnectorInspectSemanticSearchStatus"
@@ -4653,7 +4730,9 @@
           "entity",
           "status",
           "ready_for_search",
-          "supported"
+          "supported",
+          "sync_status",
+          "is_stale"
         ],
         "title": "ConnectorInspectConfiguredCacheEntity"
       },
@@ -4686,6 +4765,10 @@
             "type": "array",
             "title": "Configured Cache Entities",
             "description": "Cache entities configured for this connector instance."
+          },
+          "health": {
+            "$ref": "#/components/schemas/ContextStoreHealthSummary",
+            "description": "Compact aggregate Context Store health summary."
           }
         },
         "type": "object",
@@ -5599,6 +5682,108 @@
         ],
         "title": "ConnectorType"
       },
+      "ContextStoreHealthSummary": {
+        "properties": {
+          "last_successful_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Sync At",
+            "description": "Timestamp of the most recent successful Context Store sync."
+          },
+          "is_stale": {
+            "type": "boolean",
+            "title": "Is Stale",
+            "description": "Whether the most recent successful sync is older than its sync cadence.",
+            "default": false
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Type"
+          }
+        },
+        "type": "object",
+        "title": "ContextStoreHealthSummary"
+      },
+      "ContextStoreInactivityWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "deactivated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivated At"
+          },
+          "reactivated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reactivated At"
+          },
+          "stale_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale Since"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ContextStoreInactivityWarning",
+        "description": "Structured warning attached when Context Store lifecycle limits a search response.\n\nEmitted when a search reactivates an inactivity-disabled source (or when a prior search already\nreactivated it and table creation has not yet returned the streams to READY), or when semantic\nretrieval is unavailable while base-table fallback remains usable. The timestamps are the\ndurable transition clocks; ``stale_since`` is the preserved last cache update."
+      },
       "CronExpressionDescribeRequest": {
         "properties": {
           "cron_expression": {
@@ -5764,6 +5949,23 @@
             "type": "boolean",
             "title": "Is Experimental",
             "default": false
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -5946,6 +6148,93 @@
         },
         "type": "object",
         "title": "ExampleQuestionsByType"
+      },
+      "ExecuteBundle": {
+        "properties": {
+          "connector_definition_id": {
+            "type": "string",
+            "title": "Connector Definition Id"
+          },
+          "definition_yaml": {
+            "type": "string",
+            "title": "Definition Yaml"
+          },
+          "entity": {
+            "type": "string",
+            "title": "Entity"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "select_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Select Fields"
+          },
+          "exclude_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclude Fields"
+          },
+          "skip_truncation": {
+            "type": "boolean",
+            "title": "Skip Truncation",
+            "default": true
+          },
+          "replication_auth_key_mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Replication Auth Key Mapping"
+          },
+          "config_values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config Values"
+          },
+          "source_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Source Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "connector_definition_id",
+          "definition_yaml",
+          "entity",
+          "action",
+          "params",
+          "replication_auth_key_mapping",
+          "source_config"
+        ],
+        "title": "ExecuteBundle",
+        "description": "Unhydrated executable bundle returned by execute prepare.\n\nThis is the recipe the customer's own SDK ``LocalExecutor`` needs to rebuild and\nrun the HTTP request in their data plane, plus the UNHYDRATED secret coordinates.\nNo secret is resolved server-side. Sonar cannot build the concrete request\n(URL/headers/body) -- the SDK does -- so the bundle carries only the recipe +\ncoordinates, never a built request."
       },
       "ExecutionMetadata": {
         "properties": {
@@ -6502,6 +6791,16 @@
         "title": "RowFilteringMapperConfig",
         "description": "Configuration for row filtering mapper - uses snake_case.\n\nFilters rows based on a condition. Only rows where the specified field\nequals the provided value are kept."
       },
+      "RuntimeMode": {
+        "type": "string",
+        "enum": [
+          "direct_only",
+          "context_store_only",
+          "direct_and_context_store"
+        ],
+        "title": "RuntimeMode",
+        "description": "Runtime execution mode for a connector: whether it runs Direct, Context Store, or both."
+      },
       "ScopeType": {
         "type": "string",
         "enum": [
@@ -6821,6 +7120,18 @@
             "title": "Version",
             "description": "Version/fingerprint for the docs source."
           },
+          "content_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Revision",
+            "description": "Fingerprint of the full docs content, prose included. Changes whenever the docs content changes."
+          },
           "freshness": {
             "$ref": "#/components/schemas/SkillFreshness",
             "description": "Runtime freshness state for this metadata."
@@ -7085,6 +7396,23 @@
             "type": "boolean",
             "title": "Is Experimental",
             "default": false
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -7367,6 +7695,23 @@
             "title": "Is Experimental",
             "default": false
           },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
+          },
           "created_at": {
             "anyOf": [
               {
@@ -7504,6 +7849,23 @@
           "mode": {
             "$ref": "#/components/schemas/SourceConfigTemplateMode",
             "default": "REPLICATION"
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -7680,6 +8042,23 @@
             "type": "boolean",
             "title": "Is Experimental",
             "default": false
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -7859,6 +8238,23 @@
           "mode": {
             "$ref": "#/components/schemas/SourceConfigTemplateMode",
             "default": "REPLICATION"
+          },
+          "runtime_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runtime execution mode (live: resolved from the direct connector registry on each request)."
+          },
+          "supports_context_store": {
+            "type": "boolean",
+            "title": "Supports Context Store",
+            "description": "Supports Context Store. Derived from live runtime_mode; False when 'direct_only'.",
+            "default": true
           },
           "created_at": {
             "anyOf": [
@@ -8208,6 +8604,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8242,6 +8643,7 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
           "updated_at"
@@ -8292,6 +8694,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8315,6 +8722,11 @@
             "format": "date-time",
             "title": "Updated At",
             "description": "Timestamp when the workspace was last updated"
+          },
+          "can_manage": {
+            "type": "boolean",
+            "title": "Can Manage",
+            "description": "Whether the current caller can manage workspace settings and members"
           }
         },
         "type": "object",
@@ -8326,9 +8738,11 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "can_manage"
         ],
         "title": "WorkspaceListItem"
       },
@@ -8420,6 +8834,18 @@
             ],
             "description": "Set status to active or inactive"
           },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color",
+            "description": "Optional display color"
+          },
           "cache_enabled": {
             "anyOf": [
               {
@@ -8480,6 +8906,11 @@
             "$ref": "#/components/schemas/WorkspaceVisibility",
             "description": "Workspace visibility (shared or private)"
           },
+          "is_editable": {
+            "type": "boolean",
+            "title": "Is Editable",
+            "description": "Whether workspace settings and membership can be edited"
+          },
           "color": {
             "anyOf": [
               {
@@ -8514,6 +8945,7 @@
           "cache_enabled",
           "tombstone",
           "visibility",
+          "is_editable",
           "color",
           "created_at",
           "updated_at"
